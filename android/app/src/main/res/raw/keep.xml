@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 提示音和宠物叫声是用资源编号拼成 android.resource:// 地址播放的，资源压缩看不出引用，这里显式保留 -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:keep="@raw/*" />

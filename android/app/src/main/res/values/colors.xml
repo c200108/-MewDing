@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 图标背景色：从默认图标（参考图标 10 号）边缘取的薄荷绿 -->
+    <color name="icon_bg">#BEF4DC</color>
+    <color name="pet_icon_bg">#D6F7EA</color>
+    <color name="cream">#FFFBF4</color>
+    <color name="night">#1B2422</color>
+</resources>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 长按桌面图标弹出的快捷菜单（需求 I2） -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="drink" android:enabled="true" android:icon="@mipmap/ic_pet_cat_plain"
+        android:shortcutShortLabel="@string/sc_drink" android:shortcutLongLabel="@string/sc_drink_long">
+        <intent android:action="com.mengding.app.SC_DRINK" android:targetPackage="com.mengding.app"
+            android:targetClass="com.mengding.app.ShortcutActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="pet" android:enabled="true" android:icon="@mipmap/ic_pet_cat_plain"
+        android:shortcutShortLabel="@string/sc_pet">
+        <intent android:action="com.mengding.app.SC_PET" android:targetPackage="com.mengding.app"
+            android:targetClass="com.mengding.app.ShortcutActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="next" android:enabled="true" android:icon="@mipmap/ic_pet_cat_plain"
+        android:shortcutShortLabel="@string/sc_next">
+        <intent android:action="com.mengding.app.SC_NEXT" android:targetPackage="com.mengding.app"
+            android:targetClass="com.mengding.app.ShortcutActivity" />
+    </shortcut>
+</shortcuts>

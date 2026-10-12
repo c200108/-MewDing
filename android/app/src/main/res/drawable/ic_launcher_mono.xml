@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 由 美术/像素宠物/export_android.py 生成，不要手改 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:translateX="30" android:translateY="30"><path android:fillColor="#FFFFFFFF" android:pathData="M13,8h1v1h-1zM34,8h1v1h-1zM12,9h3v1h-3zM33,9h3v1h-3zM12,10h4v1h-4zM32,10h4v1h-4zM12,11h5v1h-5zM31,11h5v1h-5zM12,12h6v1h-6zM30,12h6v1h-6zM11,13h8v1h-8zM20,13h8v1h-8zM29,13h8v1h-8zM11,14h26v1h-26zM11,15h26v1h-26zM10,16h28v1h-28zM10,17h28v1h-28zM10,18h28v1h-28zM10,19h28v1h-28zM10,20h28v1h-28zM40,20h2v1h-2zM10,21h28v1h-28zM39,21h4v1h-4zM9,22h35v1h-35zM9,23h35v1h-35zM8,24h37v1h-37zM8,25h8v1h-8zM18,25h12v1h-12zM32,25h13v1h-13zM8,26h7v1h-7zM16,26h2v1h-2zM19,26h10v1h-10zM30,26h2v1h-2zM33,26h12v1h-12zM8,27h7v1h-7zM16,27h1v1h-1zM19,27h10v1h-10zM30,27h1v1h-1zM33,27h13v1h-13zM8,28h7v1h-7zM18,28h11v1h-11zM32,28h14v1h-14zM8,29h8v1h-8zM18,29h12v1h-12zM32,29h14v1h-14zM8,30h38v1h-38zM9,31h37v1h-37zM9,32h36v1h-36zM10,33h35v1h-35zM10,34h34v1h-34zM11,35h32v1h-32zM12,36h30v1h-30zM13,37h28v1h-28zM14,38h26v1h-26zM13,39h25v1h-25zM12,40h24v1h-24zM12,41h24v1h-24zM12,42h9v1h-9zM27,42h9v1h-9zM13,43h7v1h-7zM28,43h7v1h-7zM14,44h5v1h-5zM29,44h5v1h-5z" /></group>
+</vector>

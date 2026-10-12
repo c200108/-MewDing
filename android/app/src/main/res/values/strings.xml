@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">萌叮</string>
+    <string name="widget_name">萌叮宠物</string>
+    <string name="widget_desc">会动的宠物和今天的喝水进度</string>
+    <string name="sc_drink">喝了一杯水</string>
+    <string name="sc_drink_long">记一杯水</string>
+    <string name="sc_pet">摸摸宠物</string>
+    <string name="sc_next">下一次提醒</string>
+</resources>
