@@ -20,18 +20,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimePicker
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
@@ -121,19 +115,14 @@ fun MCard(modifier: Modifier = Modifier, padding: Dp = 16.dp, content: @Composab
     Column(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
-            .background(P.card)
-            .border(1.dp, P.line, RoundedCornerShape(22.dp))
+            .mdPanel()
             .padding(padding),
         content = content,
     )
 }
 
 @Composable
-fun SectionTitle(text: String, modifier: Modifier = Modifier) {
-    Text(text, modifier.padding(start = 4.dp, top = 18.dp, bottom = 8.dp),
-        fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = P.sub)
-}
+fun SectionTitle(text: String, modifier: Modifier = Modifier) = MdSectionTitle(text, modifier)
 
 @Composable
 fun StatBar(label: String, value: Float, color: Color, modifier: Modifier = Modifier) {
@@ -144,18 +133,14 @@ fun StatBar(label: String, value: Float, color: Color, modifier: Modifier = Modi
             Text("${value.toInt()}", fontSize = 12.sp, color = P.ink, fontWeight = FontWeight.SemiBold)
         }
         Spacer(Modifier.height(4.dp))
-        Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(P.line)) {
-            Box(Modifier.fillMaxWidth((value / 100f).coerceIn(0f, 1f)).height(8.dp)
-                .clip(RoundedCornerShape(4.dp)).background(if (value < 30) P.danger else color))
-        }
+        MdMeter(value, color)
     }
 }
 
 @Composable
 fun PrimaryButton(text: String, modifier: Modifier = Modifier, enabled: Boolean = true, icon: ImageVector? = null,
                   pixelIcon: String? = null, onClick: () -> Unit) {
-    Button(onClick, modifier.height(48.dp), enabled = enabled, shape = RoundedCornerShape(24.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = P.mint)) {
+    MdButton(onClick, modifier.height(48.dp), enabled, MdRole.SOLID) {
         icon?.let { Icon(it, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)) }
         pixelIcon?.let { PixelImg(it, 20.dp); Spacer(Modifier.width(6.dp)) }
         Text(text, fontWeight = FontWeight.SemiBold)
@@ -177,27 +162,34 @@ fun PriceButton(price: Int, modifier: Modifier = Modifier, label: String? = null
                 fontSize = 15.sp, maxLines = 1, softWrap = false)
         }
     }
-    if (primary) Button(onClick, modifier.height(44.dp), shape = RoundedCornerShape(22.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = P.mint), contentPadding = PaddingValues(horizontal = 8.dp)) { content() }
-    else OutlinedButton(onClick, modifier.height(40.dp), shape = RoundedCornerShape(20.dp),
-        contentPadding = PaddingValues(horizontal = 8.dp)) { content() }
+    if (primary) MdButton(onClick, modifier.height(44.dp), true, MdRole.SOLID, PaddingValues(horizontal = 8.dp)) { content() }
+    else MdButton(onClick, modifier.height(40.dp), true, MdRole.PRIMARY, PaddingValues(horizontal = 8.dp)) { content() }
 }
 
 @Composable
 fun GhostButton(text: String, modifier: Modifier = Modifier, enabled: Boolean = true, icon: ImageVector? = null, onClick: () -> Unit) {
-    OutlinedButton(onClick, modifier.height(44.dp), enabled = enabled, shape = RoundedCornerShape(22.dp),
-        contentPadding = PaddingValues(horizontal = 14.dp)) {
+    MdButton(onClick, modifier.height(44.dp), enabled, MdRole.PRIMARY, PaddingValues(horizontal = 14.dp)) {
         icon?.let { Icon(it, null, Modifier.size(18.dp), tint = P.mint); Spacer(Modifier.width(6.dp)) }
-        Text(text, color = P.ink)
+        Text(text, color = P.ink, fontWeight = FontWeight.Normal)
     }
 }
 
 @Composable
 fun Pill(text: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val k = Md.kind
+    val shape = when (k) { MdKind.PIXEL -> androidx.compose.foundation.shape.CutCornerShape(3.dp); MdKind.COMIC -> RoundedCornerShape(10.dp); MdKind.LINE -> RoundedCornerShape(8.dp); else -> RoundedCornerShape(18.dp) }
+    val ink = mdOutline()
     Box(
         modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(if (selected) P.mint else P.mintSoft)
+            .then(if (selected && (k == MdKind.COMIC || k == MdKind.PIXEL)) Modifier.hardShadow(shape, if (k == MdKind.PIXEL) Color.Black.copy(alpha = 0.3f) else ink, 2.dp, 2.dp) else Modifier)
+            .clip(shape)
+            .background(when { selected -> P.mint; k == MdKind.LINE -> Color.Transparent; else -> P.mintSoft })
+            .then(when (k) {
+                MdKind.COMIC -> Modifier.border(2.dp, ink, shape)
+                MdKind.PIXEL -> Modifier.border(2.dp, if (selected) ink else mdOutline().copy(alpha = 0.5f), shape)
+                MdKind.LINE -> Modifier.border(1.dp, if (selected) P.mint else P.line, shape)
+                else -> Modifier
+            })
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
     ) { Text(text, color = if (selected) Color.White else P.ink, fontSize = 14.sp, maxLines = 1, softWrap = false) }
@@ -214,8 +206,7 @@ fun ToggleRow(title: String, desc: String? = null, checked: Boolean, enabled: Bo
             desc?.let { Text(it, fontSize = 12.sp, color = P.sub) }
         }
         Spacer(Modifier.width(12.dp))
-        Switch(checked, onChange, enabled = enabled,
-            colors = SwitchDefaults.colors(checkedTrackColor = P.mint))
+        MdSwitch(checked, onChange, enabled)
     }
 }
 
@@ -225,15 +216,13 @@ fun NavRow(icon: ImageVector, title: String, desc: String? = null, onClick: () -
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).background(P.mintSoft), contentAlignment = Alignment.Center) {
-            Icon(icon, null, Modifier.size(20.dp), tint = P.mintDeep)
-        }
+        MdRowIcon(icon)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(title, fontSize = 15.sp, color = P.ink)
             desc?.let { Text(it, fontSize = 12.sp, color = P.sub) }
         }
-        Icon(Ic.Next, null, Modifier.size(18.dp), tint = P.sub)
+        MdIcon(Ic.Next, null, Modifier.size(18.dp), P.sub)
     }
 }
 
@@ -248,21 +237,6 @@ fun ValueRow(title: String, value: String, onClick: () -> Unit) {
         Spacer(Modifier.width(4.dp))
         Icon(Ic.Next, null, Modifier.size(16.dp), tint = P.sub)
     }
-}
-
-/** 选时间的对话框 */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun TimeDialog(initial: String, title: String, onDismiss: () -> Unit, onPick: (String) -> Unit) {
-    val t = Time.parse(initial)
-    val state = rememberTimePickerState(t.hour, t.minute, is24Hour = true)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = { TimePicker(state) },
-        confirmButton = { TextButton({ onPick(Time.fmt(LocalTime.of(state.hour, state.minute))) }) { Text("确定") } },
-        dismissButton = { TextButton(onDismiss) { Text("取消") } },
-    )
 }
 
 /** 点一下弹出时间选择的一行 */
@@ -287,21 +261,28 @@ fun StepperRow(title: String, value: Int, step: Int, min: Int, max: Int, unit: S
 
 @Composable
 fun RoundIcon(icon: ImageVector, size: Dp = 32.dp, onClick: () -> Unit) {
+    val k = Md.kind
+    val shape = when (k) { MdKind.PIXEL -> androidx.compose.foundation.shape.CutCornerShape(3.dp); MdKind.COMIC -> RoundedCornerShape(size * 0.3f); else -> RoundedCornerShape(size / 2) }
     Box(
-        Modifier.size(size).clip(RoundedCornerShape(size / 2)).background(P.mintSoft).clickable(onClick = onClick),
+        Modifier.size(size).clip(shape)
+            .background(when (k) { MdKind.PIXEL -> MdParchment; MdKind.COMIC -> MdYellow; MdKind.LINE -> Color.Transparent; else -> P.mintSoft })
+            .then(when (k) {
+                MdKind.PIXEL -> Modifier.border(2.dp, MdWoodDark, shape)
+                MdKind.COMIC -> Modifier.border(2.dp, mdOutline(), shape)
+                MdKind.LINE -> Modifier.border(1.dp, P.mint, shape)
+                else -> Modifier
+            })
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, null, Modifier.size(size * 0.55f), tint = P.mintDeep) }
+    ) { MdIcon(icon, null, Modifier.size(size * 0.55f), if (k == MdKind.PIXEL) MdWoodDark else if (k == MdKind.COMIC) MdInk else P.mintDeep) }
 }
 
 @Composable
-fun Divider() {
-    Box(Modifier.fillMaxWidth().height(1.dp).background(P.line))
-}
+fun Divider() = MdDivider()
 
 @Composable
 fun toaster(): (String) -> Unit {
-    val ctx = LocalContext.current
-    return { if (it.isNotEmpty()) Toast.makeText(ctx, it, Toast.LENGTH_SHORT).show() }
+    return { MdToasts.show(it) }
 }
 
 @Composable

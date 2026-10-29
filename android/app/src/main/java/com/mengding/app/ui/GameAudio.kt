@@ -52,10 +52,11 @@ object GameAudio {
         pool?.play(id, volume, volume, 1, 0, 1f)
     }
 
-    fun startMusic(ctx: Context, name: String) {
-        if (bgmName == name && bgm != null) { if (on) runCatching { bgm?.start() }; return }
+    /** enabled：小游戏用「游戏声音」开关（默认），首页小镇用自己的背景音乐开关 */
+    fun startMusic(ctx: Context, name: String, enabled: Boolean = on) {
+        if (bgmName == name && bgm != null) { if (enabled) runCatching { bgm?.start() }; return }
         stopMusic()
-        if (!on) return
+        if (!enabled) return
         runCatching {
             val afd = ctx.assets.openFd("music/$name")
             bgm = MediaPlayer().apply {
@@ -100,13 +101,40 @@ fun GameMusic(name: String, playing: Boolean) {
     }
 }
 
+/**
+ * 首页 HD-2D 小镇的背景音乐：在首页、打开了「首页背景音乐」时循环播放；切到后台、关掉开关时暂停，离开首页停掉
+ * （小游戏页面有自己的背景音乐，进去时会换掉这首，回到首页再重新放）
+ */
+@Composable
+fun HomeMusic(enabled: Boolean) {
+    val ctx = LocalContext.current
+    val owner = LocalLifecycleOwner.current
+    LaunchedEffect(enabled) {
+        if (enabled) GameAudio.startMusic(ctx, "home_bgm.ogg", enabled = true) else GameAudio.pauseMusic()
+    }
+    DisposableEffect(owner, enabled) {
+        val obs = LifecycleEventObserver { _, e ->
+            if (e == Lifecycle.Event.ON_PAUSE) GameAudio.pauseMusic()
+            if (e == Lifecycle.Event.ON_RESUME && enabled) GameAudio.startMusic(ctx, "home_bgm.ogg", enabled = true)
+        }
+        owner.lifecycle.addObserver(obs)
+        onDispose { owner.lifecycle.removeObserver(obs) }
+    }
+    DisposableEffect(Unit) { onDispose { GameAudio.stopMusic() } }
+}
+
 /** 游戏页右上角的震动开关（方向键、操作键按下时震一下） */
 @Composable
 fun VibrateToggle() {
     val cfg by Store.config.collectAsState()
     val on = cfg.settings.gameVibrate
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     Icon(Ic.Vibrate, if (on) "关掉按键震动" else "打开按键震动",
-        Modifier.size(26.dp).clickable { Store.update { it.copy(settings = it.settings.copy(gameVibrate = !on)) } },
+        Modifier.size(26.dp).clickable {
+            Store.update { it.copy(settings = it.settings.copy(gameVibrate = !on)) }
+            // 打开时立刻震一下，用户马上知道这台手机能不能震
+            if (!on) GameHaptics.buzz(ctx)
+        },
         tint = if (on) P.mintDeep else P.line)
 }
 

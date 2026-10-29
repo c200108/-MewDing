@@ -97,6 +97,8 @@ internal class PacGame(private val rows: List<String>) {
     val bean = Array(PH) { IntArray(PW) }
     var left = 0
     var eaten = 0
+    /** 这一局一共吃到的豆（每关 eaten 会清零，这个不清），结束时 3 颗换 1 萌点 */
+    var beansTotal = 0
     val pet = Mover(9, 15)
     var wantDx = -1; var wantDy = 0
     var face = -1
@@ -112,12 +114,14 @@ internal class PacGame(private val rows: List<String>) {
     var t = 0f
     val pops = ArrayList<Pop>()
     var onOver: (Int) -> Unit = {}
+    /** 吃完一关的豆（过关）时调用：过关就结算萌点 */
+    var onClear: () -> Unit = {}
     /** 音效回调（GameAudio.play） */
     var sfx: (String) -> Unit = {}
 
     init { resetLevel() }
 
-    fun restart() { level = 1; score = 0; lives = 3; extraLife = false; resetLevel() }
+    fun restart() { level = 1; score = 0; lives = 3; beansTotal = 0; extraLife = false; resetLevel() }
 
     fun resetLevel() {
         left = 0; eaten = 0
@@ -264,9 +268,9 @@ internal class PacGame(private val rows: List<String>) {
                     if (g.st == GS.ACTIVE) g.pendingRev = true
                 }
             }
-            bean[y][x] = 0; left--; eaten++
+            bean[y][x] = 0; left--; eaten++; beansTotal++
             if (eaten == 50 || eaten == 110) bonusT = 9f
-            if (left == 0) { phase = Phase.CLEAR; phaseT = 2.4f; sfx("pac_clear"); return }
+            if (left == 0) { phase = Phase.CLEAR; phaseT = 2.4f; sfx("pac_clear"); onClear(); return }
         }
         // 按住方向键才连续走；点一下只走一格；什么都没按就停在格子中间
         val wantOpen = (wantDx != 0 || wantDy != 0) && !wall(x + wantDx, y + wantDy)
@@ -418,9 +422,22 @@ fun PacGamePage() {
     }
     var started by remember { mutableStateOf(false) }
     var paused by remember { mutableStateOf(false) }
+    val toast = toaster()
     var newBest by remember { mutableStateOf(false) }
     var tick by remember { mutableLongStateOf(0L) }
-    game.onOver = { newBest = GameScores.submit("pac", it) }
+    // 萌点结算（3 颗豆 = 1 萌点，每天一次）：过关、输光、或者中途离开页面，哪个先到就按当时吃到的豆子数结算一次
+    var settled by remember { mutableStateOf(false) }
+    fun settle(why: String) {
+        if (settled || game.beansTotal <= 0) return
+        settled = true
+        toast(claimGamePoints("pac", com.mengding.app.logic.Economy.pacPoints(game.beansTotal), "$why，共吃到 ${game.beansTotal} 颗豆"))
+    }
+    game.onClear = { settle("第 ${game.level} 关过关") }
+    game.onOver = {
+        newBest = GameScores.submit("pac", it)
+        settle("这局结束")
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { GameScores.submit("pac", game.score); settle("离开游戏") } }
     game.sfx = { GameAudio.play(it) }
     GameMusic("pac_bgm.ogg", started && !paused && game.phase != Phase.OVER)
     LaunchedEffect(Unit) {
@@ -430,12 +447,12 @@ fun PacGamePage() {
             last = now; tick = now
         }
     }
-    PlayTimeReward(started && !paused && game.phase != Phase.OVER)
     PageScaffold("萌宠吃豆", scroll = false) {
         @Suppress("UNUSED_EXPRESSION") tick
         HRow {
             Text("分数 ${game.score}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = P.ink)
             Text("最高 ${maxOf(GameScores.best("pac"), game.score)}", fontSize = 13.sp, color = P.sub)
+            Text("豆 ${game.beansTotal}", fontSize = 13.sp, color = P.mintDeep, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
             repeat(game.lives.coerceAtMost(5)) { PixelImg("ui_heart", 18.dp) }
             Text("第 ${game.level} 关", fontSize = 13.sp, color = P.sub)
@@ -493,7 +510,7 @@ fun PacGamePage() {
                         }
                         Gap(10.dp)
                         PrimaryButton(if (game.phase == Phase.OVER) "再来一局" else "开始") {
-                            if (game.phase == Phase.OVER) { game.restart(); newBest = false }
+                            if (game.phase == Phase.OVER) { game.restart(); newBest = false; settled = false }
                             started = true; paused = false
                         }
                     }

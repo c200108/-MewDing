@@ -26,14 +26,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -197,9 +192,7 @@ fun PetChooser(selected: String, onPick: (String) -> Unit) {
         Catalog.all.forEach { sp ->
             val sel = sp.key == selected
             Column(
-                Modifier.width(100.dp).clip(RoundedCornerShape(18.dp))
-                    .background(if (sel) P.mintSoft else P.card)
-                    .border(2.dp, if (sel) P.mint else P.line, RoundedCornerShape(18.dp))
+                Modifier.width(100.dp).padding(end = 3.dp, bottom = 3.dp).mdTile(sel)
                     .clickable { onPick(sp.key) }.padding(8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -215,21 +208,8 @@ fun PetChooser(selected: String, onPick: (String) -> Unit) {
 fun BirthdayRow(value: String?, onChange: (String?) -> Unit) {
     var open by remember { mutableStateOf(false) }
     ValueRow("生日", value ?: "不填") { open = true }
-    if (open) {
-        val state = rememberDatePickerState()
-        DatePickerDialog(
-            onDismissRequest = { open = false },
-            confirmButton = {
-                TextButton({
-                    state.selectedDateMillis?.let {
-                        onChange(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate().toString())
-                    }
-                    open = false
-                }) { Text("确定") }
-            },
-            dismissButton = { TextButton({ onChange(null); open = false }) { Text("不填") } },
-        ) { DatePicker(state) }
-    }
+    if (open) DateDialog({ open = false }, initial = value ?: "2000-01-01", title = "生日",
+        extra = "不填" to { onChange(null); open = false }) { d -> onChange(d); open = false }
 }
 
 /** 权限列表：引导页和"权限与提醒保障"页共用 */
@@ -266,6 +246,12 @@ private fun PermCard(
         Perms.vendorAutostart(ctx)?.let { intent ->
             Divider()
             PermRow("${Perms.vendorName()}自启动", "这个牌子的手机还要允许萌叮自启动和后台运行", null) {
+                runCatching { ctx.startActivity(intent) }
+            }
+        }
+        Perms.miuiPermEditor(ctx)?.let { intent ->
+            Divider()
+            PermRow("小米：后台弹出界面、锁屏显示、悬浮窗", "小米 / 红米默认关着，桌面宠物和提醒气泡出不来。点进去把这三项都打开", null) {
                 runCatching { ctx.startActivity(intent) }
             }
         }

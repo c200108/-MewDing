@@ -1,20 +1,15 @@
-# MewDing（萌叮）
+# 萌叮 MewDing
 
-一款多功能的移动端桌宠 APP：会动的像素宠物陪你喝水、吃饭、睡觉，记录经期，还有便签、解压小游戏、换装商店和随时间变化的动态场景。
+一只像素小宠物陪你按时喝水、吃饭、睡觉的安卓 App（测试版，给亲友试用）。
 
-- 安装包：见 [Releases](https://github.com/c200108/MewDing/releases)（每个版本附 APK 和更新内容）
-- 更新记录：[更新日志.md](更新日志.md)
-- 需求与设计：[需求汇总.md](需求汇总.md)
+## 这个仓库是做什么的
 
-## 目录
+- **App 在线更新的下载源**：萌叮「我的 › 关于萌叮 › 在线更新」从这里的 [Releases](https://github.com/c200108/MewDing/releases) 检查并下载新版。每个 Release 附带 `MewDing-<版本>.apk`，说明里写有 `versionCode` 和 `sha256`，App 安装前会校验 sha256 和签名证书。
+- `update.json`：最新一版的信息（格式与 GitHub Releases 接口相同），国内网络连不上 GitHub 时 App 通过 jsDelivr 等 CDN 读它。
+- 源码和文档（`android/`、`更新日志.md`、`需求汇总.md`）供参考。
 
-| 目录 | 内容 |
-|---|---|
-| `android/` | 安卓工程（Kotlin + Jetpack Compose，minSdk 29），说明见 `android/README.md` |
-| `美术/` | 像素宠物、食物服装、小游戏、动态背景等美术的生成脚本和素材 |
-| `参考图标/` | 图标参考图 |
+## 注意
 
-## 构建
-
-用 Android Studio 打开 `android/`，或在 `android/` 下运行 `gradlew assembleDebug`。
-正式签名用的 `keystore.properties` 和签名文件不在仓库里，自己构建 release 需要准备自己的签名。
+- **原创美术素材没有公开**：宠物精灵图、表情、场景、插画、音效、音乐等图片和音频都不在仓库里（`android/app/src/main/assets` 和 `res` 里的二进制素材已排除），所以源码**不能直接编译出完整可用的 App**。需要安装请到 Releases 下载 APK。
+- 正式签名文件不在仓库里，自己构建的包无法覆盖安装官方发布的版本。
+- 素材与代码的使用许可见 App 内「关于萌叮 › 用户协议 / 开源许可」。

@@ -22,6 +22,7 @@ import com.mengding.app.pet.PetService
 import com.mengding.app.ui.AppRoot
 import com.mengding.app.ui.MengDingTheme
 import com.mengding.app.ui.Nav
+import com.mengding.app.unity.UnityHost
 import com.mengding.app.widget.Refresh
 
 class MainActivity : ComponentActivity() {
@@ -55,15 +56,34 @@ class MainActivity : ComponentActivity() {
         if (FloatingPet.hiddenByUser) { FloatingPet.hiddenByUser = false; PetService.instance?.applySettings() }
         if (Store.cfg.profile.onboarded) {
             PetService.sync(this)
+            Reminders.checkMissed(this)
             Reminders.reschedule(this)
             Refresh.all(this)
         }
         if (Store.cfg.settings.privacyLock && unlocked && Time.now() - pausedAt > 60_000 && pausedAt > 0) unlocked = false
+        UnityHost.onActivityResume()
     }
 
     override fun onPause() {
         super.onPause()
         pausedAt = Time.now()
+        UnityHost.onActivityPause()
+    }
+
+    // 首页 3D 小屋需要知道窗口焦点、屏幕配置和内存紧张
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        UnityHost.onWindowFocus(hasFocus)
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        UnityHost.onConfiguration(newConfig)
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        UnityHost.onTrimMemory(level)
     }
 
     /** 隐私锁：指纹/面容，或者手机锁屏密码 */
@@ -73,7 +93,7 @@ class MainActivity : ComponentActivity() {
             bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
         else @Suppress("DEPRECATION") bm.canAuthenticate()
         if (can != BiometricManager.BIOMETRIC_SUCCESS) {
-            Toast.makeText(this, "手机没有设置锁屏密码，隐私锁暂时不起作用", Toast.LENGTH_LONG).show()
+            com.mengding.app.ui.MdToasts.show("手机没有设置锁屏密码，隐私锁暂时不起作用")
             unlocked = true
             return
         }

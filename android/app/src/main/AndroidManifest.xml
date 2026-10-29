@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- 权限清单见 需求汇总.md 第 7A 节 -->
     <!-- 弹系统授权框的：通知（必需）、身体活动（陪我走路，可选）、麦克风（便签录音，可选） -->
@@ -8,7 +9,10 @@
     <!-- 便签录音时才申请 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- 要去设置里打开的：精确闹钟、悬浮窗、忽略电池优化 -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- 精确闹钟：安卓 12～13 用 SCHEDULE_EXACT_ALARM（用户可在设置里开关）；安卓 13 起用 USE_EXACT_ALARM（提醒类 App 安装即有，
+         安卓 14 起 SCHEDULE_EXACT_ALARM 默认不给，没有它提醒会被系统推迟，小米上可能晚很久） -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- 安装即有的普通权限 -->
@@ -22,6 +26,8 @@
     <!-- 本地天气：用户在首页主动点了"看本地天气"并同意后才申请，只要大致位置 -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 关于萌叮 → 检查更新：下载 GitHub Releases 上的新版后由萌叮发起安装（系统会让用户确认一次） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <uses-feature android:name="android.hardware.sensor.stepdetector" android:required="false" />
 
@@ -32,12 +38,22 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="false"
-        android:theme="@style/Theme.MengDing">
+        android:theme="@style/Theme.MengDing"
+        android:appCategory="productivity"
+        android:enableOnBackInvokedCallback="false"
+        tools:replace="android:appCategory,android:enableOnBackInvokedCallback">
+
+        <!-- 首页 3D 小屋（Unity 库）：只把它的画面嵌进首页，不要 Unity 自己的全屏页面 -->
+        <activity android:name="com.unity3d.player.UnityPlayerActivity" tools:node="remove" />
+        <meta-data android:name="unity.launch-fullscreen" android:value="False" tools:replace="android:value" />
+        <meta-data android:name="unity.render-outside-safearea" android:value="False" tools:replace="android:value" />
+        <meta-data android:name="unity.auto-set-game-state" android:value="false" tools:replace="android:value" />
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density"
             android:windowSoftInputMode="adjustResize" />
 
         <!-- 桌面图标：用 activity-alias 实现"换图标"（需求 I1），同一时间只启用一个 -->
@@ -149,6 +165,7 @@
         </service>
 
         <receiver android:name=".notify.AlarmReceiver" android:exported="false" />
+        <receiver android:name=".logic.UpdateReceiver" android:exported="false" />
         <receiver android:name=".notify.ActionReceiver" android:exported="false" />
         <receiver android:name=".notify.BootReceiver" android:exported="true">
             <intent-filter>
@@ -160,6 +177,14 @@
                 <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.share"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/share_paths" />
+        </provider>
 
         <receiver android:name=".widget.PetWidget" android:exported="true" android:label="@string/widget_name">
             <intent-filter>

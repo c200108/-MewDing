@@ -9,8 +9,15 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import com.mengding.app.R
 import com.mengding.app.data.DEFAULT_PHRASES
+import com.mengding.app.data.Pet
 import com.mengding.app.data.Store
+import com.mengding.app.logic.BubbleText
+import com.mengding.app.logic.LineDeck
+import com.mengding.app.logic.Mood
+import com.mengding.app.logic.PetMood
+import com.mengding.app.logic.PetSim
 import com.mengding.app.logic.Time
+import kotlin.random.Random
 
 /**
  * 宠物叫声：每种宠物一段合成音效（res/raw/cry_<宠物>.wav），点击或按住宠物时播放。
@@ -91,22 +98,71 @@ object PetVoice {
         }
     }
 
+    /**
+     * 震一下。带上「提醒」用途：安卓 13 起，后台 App 不带用途的震动会被系统直接忽略（小米、华为更严），
+     * 标成通知 / 提醒类之后，系统按用户的「通知震动」设置放行
+     */
     fun vibrate(ctx: Context) {
         val v: Vibrator = if (Build.VERSION.SDK_INT >= 31)
             ctx.getSystemService(VibratorManager::class.java).defaultVibrator
         else @Suppress("DEPRECATION") ctx.getSystemService(Vibrator::class.java)
-        runCatching { v.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 140, 90, 200), -1)) }
+        val effect = VibrationEffect.createWaveform(longArrayOf(0, 140, 90, 200), -1)
+        runCatching {
+            when {
+                Build.VERSION.SDK_INT >= 33 -> v.vibrate(effect, android.os.VibrationAttributes.createForUsage(android.os.VibrationAttributes.USAGE_NOTIFICATION))
+                else -> @Suppress("DEPRECATION") v.vibrate(effect, AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+            }
+        }
+    }
+
+    /** 提醒用的叫声：走「通知」音量（不是媒体音量），后台也能放；再震一下 */
+    fun alert(ctx: Context, species: String) {
+        runCatching {
+            android.media.MediaPlayer().apply {
+                setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+                val afd = ctx.resources.openRawResourceFd(raw(species))
+                setDataSource(afd.fileDescriptor, afd.startOffset, afd.length); afd.close()
+                setOnCompletionListener { it.release() }
+                prepare(); start()
+            }
+        }
+        vibrate(ctx)
     }
 }
 
-/** 宠物说的话 */
+/**
+ * 宠物说的话。看出门那只宠物的心情（PetMood）：饿、渴、困、难过、难受时说对应的话；
+ * 高兴 / 平淡时一半说心情话，一半说用户在「我的」里设的话（用户改过的话照样会出现）。
+ */
 object Speech {
     private var last = ""
+    private val deck = LineDeck()
 
-    fun phrase(): String {
+    private fun custom(): String {
         val list = Store.cfg.settings.phrases.filter { it.isNotBlank() }.ifEmpty { DEFAULT_PHRASES }
         val pick = list.filter { it != last }.ifEmpty { list }.random()
         last = pick
         return pick
+    }
+
+    private fun useCustom(p: Pet?) = p == null || PetMood.of(p) in setOf(Mood.HAPPY, Mood.CALM) && Random.nextBoolean()
+
+    /** 纯文字（悬浮窗、3D 小屋、通知用） */
+    fun phrase(p: Pet? = PetSim.outing(Store.cfg)): String =
+        if (useCustom(p)) custom() else deck.next(PetMood.of(p!!)).also { last = it }
+
+    /**
+     * 首页 2D 场景的气泡：可能带像素表情（见 BubbleText）。hasEmotes = 这个物种有没有表情图，
+     * 没有就只说话；只发表情却画不出来时退回文字。
+     */
+    fun bubble(p: Pet? = PetSim.outing(Store.cfg), hasEmotes: Boolean): String {
+        if (p == null) return custom()
+        val c = BubbleText.compose(p, deck)
+        val text = BubbleText.parse(c.bubble).second
+        // 高兴 / 平淡时正文有一半换成用户设的话，表情照旧
+        val withCustom = if (text.isNotEmpty() && useCustom(p)) c.copy(bubble = c.bubble.removeSuffix(text) + custom()) else c
+        return BubbleText.forSpecies(withCustom, hasEmotes).also { last = BubbleText.plain(it) }
     }
 }

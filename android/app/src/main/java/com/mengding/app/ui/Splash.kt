@@ -52,8 +52,16 @@ fun SplashScreen(onDone: () -> Unit) {
     val logoScale = remember { Animatable(0.5f) }
     val contentAlpha = remember { Animatable(0f) }
     val whole = remember { Animatable(1f) }
+    // logo 像挂着的铃铛一样轻轻晃两下，同时叮一声（提示音选了静音、手机静音时不响）
+    val sway = remember { Animatable(0f) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) {
         launch { logoScale.animateTo(1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)) }
+        launch {
+            delay(200)
+            com.mengding.app.pet.Ding.ring(ctx)
+            listOf(9f, -7f, 5f, -3f, 1.5f, 0f).forEach { sway.animateTo(it, tween(150)) }
+        }
         launch { delay(250); contentAlpha.animateTo(1f, tween(450)) }
         delay(1800)
         whole.animateTo(0f, tween(280))
@@ -73,7 +81,12 @@ fun SplashScreen(onDone: () -> Unit) {
             Image(
                 painterResource(if (ui.key == "classic") R.drawable.classic_splash else ui.logo), "萌叮",
                 Modifier.size(if (ui.key == "classic") 286.dp else 168.dp)
-                    .graphicsLayer { scaleX = logoScale.value; scaleY = logoScale.value }
+                    .graphicsLayer {
+                        scaleX = logoScale.value; scaleY = logoScale.value
+                        // 绕上沿中点转，像铃铛挂在上面晃
+                        rotationZ = sway.value
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 0f)
+                    }
                     .clip(RoundedCornerShape(if (ui.key == "classic") 28.dp else 40.dp)),
                 contentScale = ContentScale.Crop,
             )

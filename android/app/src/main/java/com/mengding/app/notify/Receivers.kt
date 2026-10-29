@@ -35,6 +35,8 @@ class ActionReceiver : BroadcastReceiver() {
         const val SLEEP = "com.mengding.app.SLEEP"
         const val WAKE = "com.mengding.app.WAKE"
         const val PET = "com.mengding.app.PET"
+        const val CUSTOM_DONE = "com.mengding.app.CUSTOM_DONE"
+        const val CUSTOM_SKIP = "com.mengding.app.CUSTOM_SKIP"
     }
 
     override fun onReceive(ctx: Context, intent: Intent) {
@@ -45,7 +47,7 @@ class ActionReceiver : BroadcastReceiver() {
             SNOOZE -> {
                 val parts = extra.split("|", limit = 2)
                 val kind = parts[0]
-                val minutes = if (kind == Kind.WATER.name) 10 else 15
+                val minutes = if (kind == Kind.WATER.name || kind == Kind.CUSTOM.name) 10 else 15
                 Actions.snooze(ctx, kind, minutes, parts.getOrElse(1) { "" })
                 "$minutes 分钟后再提醒你"
             }
@@ -54,6 +56,8 @@ class ActionReceiver : BroadcastReceiver() {
             SLEEP -> Actions.goSleep(ctx, fromReminder = true)
             WAKE -> Actions.wakeUp(ctx, extra.toIntOrNull() ?: 2)
             PET -> Actions.petPet(ctx)
+            CUSTOM_DONE -> extra.split("|", limit = 2).let { Actions.customDone(ctx, it[0], it.getOrNull(1)?.ifBlank { null }, fromReminder = true) }
+            CUSTOM_SKIP -> Actions.customSkip(ctx, extra)
             else -> null
         }
         Notifier.cancel(ctx, id)

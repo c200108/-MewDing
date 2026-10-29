@@ -1,0 +1,17 @@
+[
+ {
+  "tag_name": "v4.0.7-test",
+  "name": "萌叮 4.0.7-test",
+  "draft": false,
+  "prerelease": true,
+  "published_at": "2026-10-29T12:00:00Z",
+  "body": "萌叮 4.0.7-test（2026-10-29）测试版\n\n| 更新类型 | 更新内容 |\n|---|---|\n| 新功能 | **在线更新**：「我的 › 关于萌叮」新增「在线更新」卡片，点「检查更新」读 GitHub 仓库 c200108/MewDing 的 Releases（含测试版），有新版就显示版本、日期、大小和更新说明，点「下载并更新」应用内下载（进度条、可取消、断点续传，离开页面也继续），下载完自动接着安装 |\n| 新功能 | **国内网络兜底**：直连 GitHub 失败时，查更新改读仓库里的 update.json（走 jsDelivr 等 CDN），下载改走公共加速镜像（界面上标「通过加速镜像下载」） |\n| 新功能 | **安装前把关**：校验文件大小、sha256（Release 说明里写的）、包名、版本号必须更新、签名证书必须和当前萌叮一致，任何一项不对就删掉不装；用系统 PackageInstaller 安装，没开「允许安装未知应用」会引导去开，开完回来自动继续 |\n| 优化 | 安卓不允许普通 App 完全静默安装：第一次更新系统会弹一次确认；安卓 12 起，由萌叮自己装过一次之后，以后的更新可以不再确认。装好后启动时自动清掉安装包缓存 |\n| 修复 | 「关于萌叮」页几张卡片挨得太近、投影叠在一起 |\n| 其他 | GitHub 仓库整理：历史提交里的原创插图、素材和安装包已全部清除，仓库只保留源码和文档（图片、音频等素材不公开，源码不能直接编译出完整 App）；补发 0.3.13-test～4.0.7-test 共 18 个版本的 Release，每个都附 sha256 |\n\n**已验证**：单元测试 91/91 通过（新增 UpdateCheckTest 6 项：版本号按数字比较、挑最新且带安装包的 Release、排除 Unity / debug / x86 包、和当前版本比较、坏 JSON、说明里去掉 sha256 等机器行）；apksigner 校验通过（证书 SHA-256 与 4.0.6 相同），aapt2：versionCode 34 / 4.0.7-test / arm64-v8a。模拟器（Android 15，同签名带 x86_64 的测试包）：关于萌叮 4 套风格截图正常，「检查更新」连上 GitHub 读到最新 Release 并正确提示「已经是最新版」。**未验证**：下载 → 校验 → 安装整条链要等新 Release 发上去后再测；安装一步需要真机（模拟器是 x86，装不了 arm64 包）；加速镜像和 jsDelivr 备用地址在国内真机网络下的表现。\n\n---\nversionCode: 34\nsha256: cd6e7647e1ea4d8a4a002d42a2bb42fb321d56601fc073a34ee0ac7ae97a91b9\n大小: 68131138 字节\n",
+  "assets": [
+   {
+    "name": "MewDing-4.0.7-test.apk",
+    "size": 68131138,
+    "browser_download_url": "https://github.com/c200108/MewDing/releases/download/v4.0.7-test/MewDing-4.0.7-test.apk"
+   }
+  ]
+ }
+]

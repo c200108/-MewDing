@@ -142,27 +142,57 @@ fun PadButton(name: String, size: Dp, modifier: Modifier = Modifier, onChange: (
     )
 }
 
-/** 游戏按键震动反馈：设置里 gameVibrate 打开时，按下方向键、操作键、道具时轻震一下 */
+/**
+ * 游戏按键震动反馈：设置里 gameVibrate 打开时，按下方向键、操作键、道具时轻震一下。
+ *
+ * 0.3.11 之前是 18 毫秒、强度 120 的单次震动，很多手机的马达起振就要二三十毫秒，真机上基本感觉不到；
+ * 也没标用途，部分系统按"未知用途"处理，可能被触感设置压掉。现在：
+ *  - Android 10+ 优先用系统调好的"点击"效果（各厂商按自己马达调过），不支持再退回 35 毫秒默认强度；
+ *  - 标成游戏用途（USAGE_GAME → 媒体类震动），不跟系统"触摸振动"开关走。
+ * 系统总震动关闭、勿扰或省电模式禁震时仍然不会震，这是系统行为。
+ */
 object GameHaptics {
+    private val attrs by lazy {
+        android.media.AudioAttributes.Builder()
+            .setUsage(android.media.AudioAttributes.USAGE_GAME)
+            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+    }
+    private var effect: android.os.VibrationEffect? = null
+
+    private fun vibrator(ctx: Context): android.os.Vibrator? = runCatching {
+        if (android.os.Build.VERSION.SDK_INT >= 31)
+            ctx.getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
+        else @Suppress("DEPRECATION") ctx.getSystemService(android.os.Vibrator::class.java)
+    }.getOrNull()?.takeIf { it.hasVibrator() }
+
+    private fun effect(v: android.os.Vibrator): android.os.VibrationEffect = effect ?: run {
+        val click = android.os.VibrationEffect.EFFECT_CLICK
+        val predefined = android.os.Build.VERSION.SDK_INT >= 30 &&
+            v.areAllEffectsSupported(click) == android.os.Vibrator.VIBRATION_EFFECT_SUPPORT_YES
+        (if (predefined) android.os.VibrationEffect.createPredefined(click)
+        else android.os.VibrationEffect.createOneShot(35, android.os.VibrationEffect.DEFAULT_AMPLITUDE)).also { effect = it }
+    }
+
     fun tap(ctx: Context) {
         if (!Store.cfg.settings.gameVibrate) return
-        runCatching {
-            val v = if (android.os.Build.VERSION.SDK_INT >= 31)
-                ctx.getSystemService(android.os.VibratorManager::class.java).defaultVibrator
-            else @Suppress("DEPRECATION") ctx.getSystemService(android.os.Vibrator::class.java)
-            v.vibrate(android.os.VibrationEffect.createOneShot(18, 120))
-        }
+        buzz(ctx)
+    }
+
+    /** 不看开关直接震一下：打开震动开关时用来让用户确认手机能震 */
+    fun buzz(ctx: Context) {
+        val v = vibrator(ctx) ?: return
+        runCatching { @Suppress("DEPRECATION") v.vibrate(effect(v), attrs) }
     }
 }
 
 /** 游戏顶栏的小暂停键：放在顶上，离方向键、操作键远，不容易误按 */
 @Composable
 fun PauseChip(paused: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    androidx.compose.material3.Text(if (paused) "▶ 继续" else "Ⅱ 暂停",
-        Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
-            .background(if (enabled) P.mintSoft else P.line)
-            .clickable(enabled = enabled, onClick = onClick).padding(horizontal = 10.dp, vertical = 4.dp),
-        fontSize = 13.sp, color = if (enabled) P.mintDeep else P.sub)
+    MdButton(onClick, androidx.compose.ui.Modifier, enabled, MdRole.PRIMARY,
+        androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
+        androidx.compose.material3.Text(if (paused) "▶ 继续" else "Ⅱ 暂停", fontSize = 13.sp)
+    }
 }
 
 /** 萌点图标：全 App 统一用像素金币小红心（商店里的那个） */
@@ -186,7 +216,20 @@ object GameScores {
     }
 }
 
-/** 玩游戏的时长换萌点（和捏云同一套规则：每分钟 +3，每天上限 15） */
+/** 一局结束领萌点（每种游戏每天一次），返回给玩家看的一句话 */
+fun claimGamePoints(game: String, pts: Int, what: String): String {
+    var gained = 0
+    Store.update { st -> Economy.gameReward(st, game, pts).also { gained = it.second }.first }
+    // 小任务「玩一局任意小游戏」+1；领到萌点的话徽章「游戏手柄」+1、叮一声
+    com.mengding.app.logic.Actions.gamePlayed(com.mengding.app.MengDingApp.app, gained)
+    return when {
+        gained > 0 -> "$what，萌点 +$gained（这个游戏今天就领这一次）"
+        gained < 0 -> "$what，今天这个游戏已经领过萌点，明天再来"
+        else -> "$what，不够换萌点，再玩一局吧"
+    }
+}
+
+/** 旧：玩游戏的时长换萌点（每分钟 +3，每天上限 15）。现在改成一局结束按成绩换（claimGamePoints），不再调用 */
 @Composable
 fun PlayTimeReward(playing: Boolean) {
     val toast = toaster()

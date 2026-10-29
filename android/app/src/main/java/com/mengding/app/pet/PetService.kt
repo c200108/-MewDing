@@ -146,8 +146,16 @@ class PetService : Service(), SensorEventListener {
         val s = Store.cfg.settings
         if (!wanted()) { stopSelf(); return }
         val canOverlay = Settings.canDrawOverlays(this)
-        if (s.floatingPet && canOverlay && !FloatingPet.hiddenByUser) {
+        // 没有宠物出门（都召回部屋了）就不放桌宠窗口：否则屏幕上留一个看不见的窗口，点空白处还会冒气泡
+        if (s.floatingPet && canOverlay && !FloatingPet.hiddenByUser && PetSim.outing(Store.cfg) != null) {
             if (floating == null) floating = FloatingPet(this).also { it.show() }
+            // 第一次打开桌面宠物：它自己冒三句小提示（轻点 / 拖动 / 长按），每句停 4 秒；「我的 → 重新显示新手提示」后会再说一遍
+            if ("floating" !in s.tipsSeen) {
+                Store.update { it.copy(settings = it.settings.copy(tipsSeen = (it.settings.tipsSeen + "floating").distinct())) }
+                val h = android.os.Handler(android.os.Looper.getMainLooper())
+                listOf("轻点我一下，就是摸摸我～", "按住我拖一拖，可以把我放到别的地方", "长按我会弹出菜单：喝水、吃饭、躲起来……")
+                    .forEachIndexed { i, t -> h.postDelayed({ speak(t, sound = false, durationMs = 4000L) }, 1200L + i * 4300L) }
+            }
         } else {
             floating?.hide(); floating = null
         }
@@ -177,6 +185,8 @@ class PetService : Service(), SensorEventListener {
 
     /** 刷新通知和悬浮宠物；内容没变就不重发通知 */
     fun refresh(force: Boolean = false) {
+        // 召回 / 带出门之后桌宠窗口跟着收起 / 出来
+        if ((floating != null) != (PetSim.outing(Store.cfg) != null && Store.cfg.settings.floatingPet)) { applySettings(); return }
         floating?.refresh()
         if (!screenOn && !force) return
         val st = Store.cfg

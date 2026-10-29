@@ -70,6 +70,9 @@ fun AppRoot(act: MainActivity) {
             cfg.settings.privacyLock && !act.unlocked -> LockScreen { act.authenticate() }
             else -> Main()
         }
+        // 解锁徽章的大徽章动画盖在最上面（启动页放完之后）
+        if (!splash && cfg.profile.onboarded) { CoachLayer(); BadgeUnlockLayer() }
+        MdToastHost()
         if (splash) SplashScreen { splashDone = true; splash = false }
     }
 }
@@ -119,30 +122,10 @@ private fun Main() {
                 else -> MeScreen()
             }
         }
-        if (Nav.stack.isEmpty()) {
-            Row(
-                Modifier.fillMaxWidth().background(P.card).navigationBarsPadding().height(64.dp),
-                horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically,
-            ) {
-                tabs.forEach { t ->
-                    val sel = Nav.tab == t.key
-                    Column(
-                        Modifier.weight(1f).clickable { Nav.tab = t.key }.padding(vertical = 6.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Box(
-                            Modifier.clip(RoundedCornerShape(14.dp)).background(if (sel) P.mintSoft else P.card)
-                                .padding(horizontal = if (tabs.size > 6) 10.dp else 16.dp, vertical = 4.dp),
-                        ) {
-                            if (t.art != null) Image(
-                                painterResource(t.art), t.label,
-                                Modifier.size(24.dp).graphicsLayer { alpha = if (sel) 1f else 0.6f; scaleX = if (sel) 1.12f else 1f; scaleY = scaleX },
-                            )
-                            else Icon(t.icon, t.label, Modifier.size(22.dp), tint = if (sel) P.mintDeep else P.sub)
-                        }
-                        Text(t.label, fontSize = 11.sp, color = if (sel) P.mintDeep else P.sub)
-                    }
-                }
+        // 全屋展开（横屏）时把底部标签栏让给场景
+        if (Nav.stack.isEmpty() && !(Nav.tab == "home" && com.mengding.app.unity.UnityHost.expanded)) {
+            MdNavBar {
+                tabs.forEach { t -> MdNavItem(Nav.tab == t.key, t.label, t.icon, t.art) { Nav.tab = t.key } }
             }
         }
     }
@@ -152,19 +135,21 @@ private fun Main() {
 @Composable
 fun PageScaffold(title: String, scroll: Boolean = true, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxSize().statusBarsPadding().then(if (Nav.stack.isNotEmpty()) Modifier.navigationBarsPadding() else Modifier)) {
-        Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (Nav.stack.isNotEmpty()) {
-                Box(Modifier.size(44.dp).clip(RoundedCornerShape(22.dp)).clickable { Nav.back() }, contentAlignment = Alignment.Center) {
-                    Icon(Ic.Back, "返回", Modifier.size(22.dp), tint = P.ink)
-                }
-            } else Spacer(Modifier.width(12.dp))
-            Text(title, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = P.ink)
-        }
+        MdTopBar(title, if (Nav.stack.isNotEmpty()) ({ Nav.back() }) else null)
         val m = Modifier.fillMaxSize().padding(horizontal = 16.dp)
         Column(if (scroll) m.verticalScroll(rememberScrollState()) else m) {
             content()
             Gap(28.dp)
         }
+    }
+}
+
+/** 解压小游戏没有输赢结算：在里面玩满 20 秒就算「玩了一局」（每日小任务） */
+@Composable
+private fun RelaxPlayed(page: String) {
+    LaunchedEffect(page) {
+        kotlinx.coroutines.delay(20_000)
+        com.mengding.app.logic.Actions.gamePlayed(com.mengding.app.MengDingApp.app, 0)
     }
 }
 
@@ -179,6 +164,9 @@ private fun SubPage(page: String) {
         page == "privacy" -> PrivacyPage()
         page == "perms" -> PermissionsPage()
         page == "about" -> AboutPage()
+        page == "licenses" -> LicensesPage()
+        page == "terms" -> TermsPage()
+        page == "contact" -> ContactPage()
         page == "adopt" -> AdoptPage()
         page == "font" -> FontPage()
         page == "room" -> RoomScreen()
@@ -187,8 +175,15 @@ private fun SubPage(page: String) {
         page == "care" -> CarePage()
         page == "game_pac" -> PacGamePage()
         page == "game_adv" -> AdvGamePage()
+        page == "game_cloud" -> { RelaxPlayed(page); CloudGamePage() }
+        page == "game_yarn" -> { RelaxPlayed(page); YarnGamePage() }
+        page == "game_ink" -> { RelaxPlayed(page); InkGamePage() }
         page == "game_link" -> LinkGamePage()
         page == "speech" -> SpeechPage()
+        page == "health" -> HealthPage()
+        page == "customs" -> CustomRemindersPage()
+        page.startsWith("custom:") -> CustomEditPage(page.removePrefix("custom:"))
+        page == "badges" -> BadgesPage()
         page == "theme" -> ThemePage()
         page == "shop" -> ShopPage()
         page.startsWith("note:") -> NoteEditorPage(page.removePrefix("note:"))

@@ -81,7 +81,7 @@ fun MengDingTheme(content: @Composable () -> Unit) {
             labelSmall = base0.labelSmall.withFont(),
         )
     } ?: base0
-    androidx.compose.runtime.CompositionLocalProvider(LocalPalette provides p, LocalUiTheme provides ui) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalPalette provides p, LocalUiTheme provides ui, LocalMdStyle provides MdStyles.of(cfg.settings.uiStyle)) {
         MaterialTheme(colorScheme = scheme, typography = type, content = content)
     }
 }

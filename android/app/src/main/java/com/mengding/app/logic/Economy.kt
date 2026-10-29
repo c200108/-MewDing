@@ -19,15 +19,23 @@ object Economy {
     /** 商店一次买 n 个的总价：买 5 个打八折（四舍五入，至少 1 萌点） */
     fun bulkPrice(price: Int, n: Int): Int = if (n >= 5) Math.round(price * n * 0.8f).coerceAtLeast(1) else price * n
 
-    /** 签到 +10；连续第 7 天额外 +30，然后重新计数 */
+    /** 联签第几天额外送多少：7 天 +50、14 天 +100、21 天 +150、30 天 +250；满 30 天后联签天数清零重新记 */
+    val checkInBonus = mapOf(7 to 50, 14 to 100, 21 to 150, 30 to 250)
+    const val CHECK_IN = 20
+
+    /** 签到 +20；联签到第 7 / 14 / 21 / 30 天另外加送（见 checkInBonus），第 30 天之后从第 1 天重新记 */
     fun checkIn(st0: ConfigState): Pair<ConfigState, Int> {
         val st = freshDaily(st0)
         if (!canCheckIn(st)) return st to 0
         val yesterday = Time.today().minusDays(1).toString()
-        val streak = if (st.economy.lastCheckIn == yesterday) st.economy.checkInStreak + 1 else 1
-        val bonus = if (streak % 7 == 0) 30 else 0
-        val gain = 10 + bonus
-        val e = st.economy.copy(points = st.economy.points + gain, lastCheckIn = Time.todayStr(), checkInStreak = streak)
+        val prev = st.economy.checkInStreak
+        val streak = if (st.economy.lastCheckIn == yesterday && prev < 30) prev + 1 else 1
+        val bonus = checkInBonus[streak] ?: 0
+        val gain = CHECK_IN + bonus
+        // 先补算一次累计签到天数（徽章上线前签过的按联签天数算），再加上今天
+        val seeded = Badges.seed(st).economy
+        val e = seeded.copy(points = st.economy.points + gain, lastCheckIn = Time.todayStr(), checkInStreak = streak,
+            checkInDays = seeded.checkInDays + 1)
         return st.copy(economy = e) to gain
     }
 
@@ -70,7 +78,25 @@ object Economy {
         return add(st, 5).let { it.copy(daily = it.daily.copy(recordAwarded = true)) } to 5
     }
 
-    /** 小游戏：每玩满 60 秒 +3，每天上限 15 */
+    /**
+     * 小游戏换萌点：每种游戏每天只能领一次（这一局换出来是 0 不算领过）。
+     *   萌宠大冒险：这一局吃到的金币 ÷ 2；萌宠吃豆：这一局吃到的豆 ÷ 3；萌宠连连看：过关按难度 简单 4 / 普通 8 / 困难 15 / 无人生还 25
+     * 返回实际得到的萌点；今天这个游戏已经领过返回 -1
+     */
+    fun gameReward(st0: ConfigState, game: String, pts: Int): Pair<ConfigState, Int> {
+        val st = freshDaily(st0)
+        if (game in st.daily.gamesAwarded) return st to -1
+        if (pts <= 0) return st to 0
+        return add(st, pts).let { it.copy(daily = it.daily.copy(gamesAwarded = it.daily.gamesAwarded + game)) } to pts
+    }
+
+    /** 萌叮大冒险：金币 ÷ 2；萌宠吃豆：豆 ÷ 3（连连看按难度给，见 LinkDiff.reward） */
+    fun advPoints(coins: Int) = coins / 2
+    fun pacPoints(beans: Int) = beans / 3
+
+    fun gameAwardedToday(st: ConfigState, game: String) = st.daily.date == Time.todayStr() && game in st.daily.gamesAwarded
+
+    /** 旧规则（已不用）：每玩满 60 秒 +3，每天上限 15 */
     fun gameSeconds(st0: ConfigState, seconds: Int): Pair<ConfigState, Int> {
         val st = freshDaily(st0)
         val total = st.daily.gameSeconds + seconds

@@ -62,6 +62,10 @@ object Sprites {
 
     fun action(key: String): Action = actions[key] ?: actions.getValue("idle")
 
+    /** 这一帧头顶的位置 [头顶中线 x, 头顶 y, 眼睛上沿 y]（宠物像素，精灵图原本朝左）；没有锚点数据时返回 null */
+    fun head(species: String, action: String, frame: Int): IntArray? =
+        anchors[species]?.getOrNull(action(action).row)?.getOrNull(frame % frames)
+
     @Synchronized
     fun sheet(ctx: Context, species: String): Bitmap = sheets.getOrPut(species) {
         val opts = BitmapFactory.Options().apply { inScaled = false }

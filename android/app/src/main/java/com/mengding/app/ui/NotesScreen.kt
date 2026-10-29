@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -19,10 +20,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -65,19 +64,12 @@ fun NotesScreen() {
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 16.dp)) {
-            Row(Modifier.padding(top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (Nav.stack.isNotEmpty()) {
-                    Box(Modifier.size(44.dp).clip(RoundedCornerShape(22.dp)).clickable { Nav.back() }, contentAlignment = Alignment.Center) {
-                        Icon(Ic.Back, "返回", Modifier.size(22.dp), tint = P.ink)
-                    }
-                }
-                Text("便签", Modifier.padding(start = 4.dp), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = P.ink)
-            }
+            Box(Modifier.offset(x = (-8).dp)) { MdTopBar("便签", if (Nav.stack.isNotEmpty()) ({ Nav.back() }) else null) }
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(P.card).padding(horizontal = 14.dp, vertical = 10.dp),
+                Modifier.fillMaxWidth().padding(end = 3.dp, bottom = 3.dp).mdPanel(mdShape(16.dp)).padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Ic.Search, null, Modifier.size(18.dp), tint = P.sub)
+                MdIcon(Ic.Search, null, Modifier.size(18.dp), P.sub)
                 Spacer(Modifier.width(8.dp))
                 Box(Modifier.weight(1f)) {
                     if (query.isEmpty()) Text("搜索便签", color = P.sub, fontSize = 15.sp)
@@ -92,11 +84,7 @@ fun NotesScreen() {
                 Gap(10.dp)
             }
             if (list.isEmpty()) {
-                Column(Modifier.fillMaxWidth().padding(top = 60.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Ic.Note, null, Modifier.size(48.dp), tint = P.line)
-                    Gap(10.dp)
-                    Text(if (query.isBlank()) "还没有便签，点右下角写一条" else "没有找到", color = P.sub)
-                }
+                MdEmpty(if (query.isBlank()) "还没有便签，点右下角写一条" else "没有找到", Modifier.padding(top = 48.dp))
             }
             LazyColumn(Modifier.fillMaxSize()) {
                 items(list, key = { it.id }) { n ->
@@ -106,11 +94,7 @@ fun NotesScreen() {
                 item { Gap(80.dp) }
             }
         }
-        Box(
-            Modifier.align(Alignment.BottomEnd).padding(20.dp).size(58.dp).clip(RoundedCornerShape(29.dp))
-                .background(P.mint).clickable { Nav.go("note:new") },
-            contentAlignment = Alignment.Center,
-        ) { Icon(Ic.Plus, "新建便签", Modifier.size(28.dp), tint = Color.White) }
+        MdFab(Ic.Plus, "新建便签", Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(20.dp)) { Nav.go("note:new") }
     }
 
     menuFor?.let { n ->
@@ -135,6 +119,7 @@ fun NotesScreen() {
 
 fun deleteNote(n: Note) {
     n.blocks.forEach { NoteMedia.delete(it.file) }
+    runCatching { com.mengding.app.logic.NoteVideo.files.deleteNote(n.id) }
     Store.updateNotes { s -> s.copy(notes = s.notes.filterNot { it.id == n.id }) }
 }
 
@@ -152,7 +137,8 @@ private fun NoteCard(n: Note, modifier: Modifier) {
     val images = n.blocks.count { it.type == BlockType.IMAGE }
     val audios = n.blocks.count { it.type == BlockType.AUDIO }
     val tables = n.blocks.count { it.type == BlockType.TABLE }
-    MCard(modifier) {
+    val videos = n.blocks.count { it.type == BlockType.VIDEO }
+    MdNoteCard(n.id, modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (n.pinned) { Icon(Ic.Pin, null, Modifier.size(16.dp), tint = P.pink); Spacer(Modifier.width(4.dp)) }
             Text(n.title.ifBlank { preview.take(20).ifBlank { "无标题" } }, Modifier.weight(1f), fontSize = 16.sp,
@@ -163,12 +149,13 @@ private fun NoteCard(n: Note, modifier: Modifier) {
             Gap(4.dp)
             Text(preview, fontSize = 14.sp, color = P.sub, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
-        if (images + audios + tables > 0 || n.reminder?.enabled == true) {
+        if (images + audios + tables + videos > 0 || n.reminder?.enabled == true) {
             Gap(8.dp)
             HRow(gap = 10.dp) {
                 if (images > 0) Tag(Ic.Image, "$images")
                 if (audios > 0) Tag(Ic.Music, "$audios")
                 if (tables > 0) Tag(Ic.Table, "$tables")
+                if (videos > 0) Tag(Ic.Video, "$videos")
                 n.reminder?.takeIf { it.enabled }?.let { Tag(Ic.Bell, reminderLabel(it)) }
             }
         }
@@ -207,7 +194,7 @@ private fun CareEntry() {
     val soon = priv.care.mapNotNull { c -> com.mengding.app.logic.Period.careNext(c)?.let { c to it } }.minByOrNull { it.second }
     val inPeriod = priv.care.firstOrNull { com.mengding.app.logic.Period.careInPeriod(it) }
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(P.pinkSoft).clickable { Nav.go("care") }
+        Modifier.fillMaxWidth().padding(end = 2.dp, bottom = 2.dp).mdBlock(P.pink).clickable { Nav.go("care") }
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

@@ -17,11 +17,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -313,22 +310,7 @@ private fun CareSection() {
 private fun BirthdayRowLike(title: String, value: String?, onChange: (String?) -> Unit) {
     var open by remember { mutableStateOf(false) }
     ValueRow(title, value ?: "选择日期") { open = true }
-    if (open) DateDialog({ open = false }) { onChange(it); open = false }
+    if (open) DateDialog({ open = false }, initial = value) { onChange(it); open = false }
 }
 
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable
-fun DateDialog(onDismiss: () -> Unit, onPick: (String) -> Unit) {
-    val state = androidx.compose.material3.rememberDatePickerState()
-    androidx.compose.material3.DatePickerDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton({
-                state.selectedDateMillis?.let {
-                    onPick(java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneOffset.UTC).toLocalDate().toString())
-                } ?: onDismiss()
-            }) { Text("确定") }
-        },
-        dismissButton = { TextButton(onDismiss) { Text("取消") } },
-    ) { androidx.compose.material3.DatePicker(state) }
-}
+

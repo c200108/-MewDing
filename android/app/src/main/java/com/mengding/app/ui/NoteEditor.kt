@@ -1,5 +1,6 @@
 package com.mengding.app.ui
 
+import kotlinx.coroutines.launch
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -37,11 +38,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -142,7 +140,12 @@ fun NoteEditorPage(id: String) {
         n.copy(blocks = list)
     }
 
-    LaunchedEffect(note) { delay(500); save(note) }
+    // 这次打开后真的改了内容，才算小任务「写或改一条便签」（每次进编辑页最多记一次）
+    var touched by remember(id) { mutableStateOf(false) }
+    LaunchedEffect(note) {
+        delay(500); save(note)
+        if (!touched && note != stored && !isEmpty(note)) { touched = true; com.mengding.app.logic.Actions.noteTouched() }
+    }
     DisposableEffect(id) {
         onDispose {
             NotePlayer.stop()
@@ -160,10 +163,34 @@ fun NoteEditorPage(id: String) {
     }
     val pickAudio = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
-        val name = NoteMedia.import(ctx, uri, NoteMedia.extOf(ctx, uri, "m4a"))
-        if (name == null) toast("音频读取失败")
-        else insert(Block(newId(), BlockType.AUDIO, file = name, durationMs = NoteMedia.duration(name), text = "插入的音频"))
+        val name = NoteMedia.importAudio(ctx, uri)
+        when {
+            name == null -> toast("音频读取失败")
+            name.startsWith("!") -> toast(name.drop(1))
+            else -> insert(Block(newId(), BlockType.AUDIO, file = name, durationMs = NoteMedia.duration(name), text = NoteMedia.displayName(ctx, uri) ?: "插入的音频"))
+        }
     }
+    // 插入视频：后台复制到 App 目录，显示进度，可以取消
+    var videoProgress by remember { mutableStateOf<Float?>(null) }
+    val videoCancel = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val pickVideo = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        if (videoProgress != null) return@rememberLauncherForActivityResult
+        videoCancel.set(false); videoProgress = -1f
+        scope.launch {
+            val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.mengding.app.logic.NoteVideo.import(ctx, uri, id, { p -> scope.launch { if (videoProgress != null) videoProgress = p } }, { videoCancel.get() })
+            }
+            videoProgress = null
+            when (r) {
+                is com.mengding.app.logic.NoteVideo.Result.Ok -> insert(Block(newId(), BlockType.VIDEO, file = r.rel, durationMs = r.durationMs, text = r.title ?: "视频"))
+                is com.mengding.app.logic.NoteVideo.Result.Fail -> toast(r.msg)
+                com.mengding.app.logic.NoteVideo.Result.Cancelled -> toast("已取消插入视频")
+            }
+        }
+    }
+    DisposableEffect(id) { onDispose { videoCancel.set(true) } }
     fun startRec() {
         if (recorder.start()) recording = true else toast("录音启动失败")
     }
@@ -171,16 +198,46 @@ fun NoteEditorPage(id: String) {
         if (ok) startRec() else toast("没有麦克风权限，录不了音")
     }
 
+    var showShare by remember { mutableStateOf(false) }
+    if (showShare) {
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        AlertDialog(
+            onDismissRequest = { showShare = false },
+            title = { Text("分享便签") },
+            text = {
+                Column {
+                    com.mengding.app.logic.NoteExport.Kind.entries.forEach { k ->
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable {
+                            showShare = false
+                            NotePlayer.stop()
+                            scope.launch(kotlinx.coroutines.Dispatchers.Default) {
+                                val err = com.mengding.app.logic.NoteExport.share(ctx, note, k)
+                                if (err != null) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { toast(err) }
+                            }
+                        }.padding(horizontal = 6.dp, vertical = 10.dp)) {
+                            Text(k.label, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = P.ink)
+                            Text(k.desc, fontSize = 12.sp, color = P.sub)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton({ showShare = false }) { Text("取消") } },
+        )
+    }
+
     val focusedBlock = note.blocks.firstOrNull { it.id == focused && it.type == BlockType.TEXT }
+    CoachFor("notes", listOf(
+        Coach.Tip("note_share", "右上角可以把便签分享成图片、文字或文件"),
+        Coach.Tip("note_remind", "点小铃铛给便签定个时，到点宠物会提醒你"),
+    ))
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
         // 顶栏
         Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(44.dp).clip(CircleShape).clickable { Nav.back() }, contentAlignment = Alignment.Center) {
-                Icon(Ic.Back, "返回", Modifier.size(22.dp), tint = P.ink)
-            }
+            MdBackButton { Nav.back() }
             Spacer(Modifier.weight(1f))
-            TopIcon(Ic.Bell, if (note.reminder?.enabled == true) P.mint else P.sub) { showReminder = true }
+            Box(Modifier.coachTarget("note_share")) { TopIcon(Ic.Share, P.sub) { showShare = true } }
+            Box(Modifier.coachTarget("note_remind")) { TopIcon(Ic.Bell, if (note.reminder?.enabled == true) P.mint else P.sub) { showReminder = true } }
             TopIcon(Ic.Pin, if (note.pinned) P.pink else P.sub) { edit { it.copy(pinned = !it.pinned) } }
             TopIcon(Ic.Trash, P.sub) { confirmDelete = true }
         }
@@ -196,11 +253,11 @@ fun NoteEditorPage(id: String) {
                     Modifier.padding(top = 4.dp, bottom = 8.dp), fontSize = 12.sp, color = P.sub)
                 note.reminder?.takeIf { it.enabled }?.let { r ->
                     Row(
-                        Modifier.clip(RoundedCornerShape(14.dp)).background(P.mintSoft).clickable { showReminder = true }
+                        Modifier.padding(end = 2.dp, bottom = 2.dp).mdBlock(P.mint).clickable { showReminder = true }
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Ic.Bell, null, Modifier.size(14.dp), tint = P.mintDeep)
+                        MdIcon(Ic.Bell, null, Modifier.size(14.dp), P.mintDeep)
                         Spacer(Modifier.width(4.dp))
                         Text("${reminderLabel(r)} · ${r.mode.label}", fontSize = 12.sp, color = P.mintDeep)
                     }
@@ -242,6 +299,7 @@ fun NoteEditorPage(id: String) {
                         )
                     }
                     BlockType.IMAGE -> ImageBlock(b) { NoteMedia.delete(b.file); edit { n -> n.copy(blocks = n.blocks - b) } }
+                    BlockType.VIDEO -> VideoBlock(b) { NoteMedia.delete(b.file); edit { n -> n.copy(blocks = n.blocks - b) } }
                     BlockType.AUDIO -> AudioBlock(b) { NotePlayer.stop(); NoteMedia.delete(b.file); edit { n -> n.copy(blocks = n.blocks - b) } }
                     BlockType.TABLE -> TableBlock(b, onChange = { t -> setBlock(b.id) { it.copy(table = t) } },
                         onDelete = { edit { n -> n.copy(blocks = n.blocks - b) } })
@@ -267,11 +325,11 @@ fun NoteEditorPage(id: String) {
 
         if (showFmt) {
             if (focusedBlock != null) FormatPanel(focusedBlock.spec) { sp -> setBlock(focusedBlock.id) { it.copy(spec = sp) } }
-            else Text("先点一下要调整的那一段文字", Modifier.fillMaxWidth().background(P.card).padding(14.dp), fontSize = 13.sp, color = P.sub)
+            else Text("先点一下要调整的那一段文字", Modifier.fillMaxWidth().background(mdSurface()).padding(14.dp), fontSize = 13.sp, color = P.sub)
         }
         // 工具栏
         Row(
-            Modifier.fillMaxWidth().background(P.card).horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth().mdBar(top = true).horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ToolBtn(Ic.TextFmt, "格式", showFmt) { showFmt = !showFmt }
@@ -285,7 +343,9 @@ fun NoteEditorPage(id: String) {
                 if (ctx.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startRec()
                 else micPerm.launch(Manifest.permission.RECORD_AUDIO)
             }
-            ToolBtn(Ic.Music, "音频") { pickAudio.launch(arrayOf("audio/*")) }
+            // 有的文件管理器把 .flac / .ape 之类报成 application/octet-stream，只写 audio/* 就选不到
+            ToolBtn(Ic.Music, "音频") { pickAudio.launch(arrayOf("audio/*", "application/ogg", "application/octet-stream", "video/webm", "video/mp4")) }
+            ToolBtn(Ic.Video, "视频") { pickVideo.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) }
             ToolBtn(Ic.Table, "表格") { insert(Block(newId(), BlockType.TABLE, table = List(3) { List(3) { "" } })) }
             ToolBtn(Ic.Bell, "提醒", note.reminder?.enabled == true) { showReminder = true }
         }
@@ -298,15 +358,17 @@ fun NoteEditorPage(id: String) {
         showReminder = false
         r?.let { rr -> Reminders.noteNext(rr)?.let { toast("下次提醒：${Time.dateTimeOf(it).format(DateTimeFormatter.ofPattern("M 月 d 日 HH:mm"))}") } }
     }
+    videoProgress?.let { p -> MdProgress("正在插入视频", p, "视频会复制一份存进萌叮，原视频不受影响") { videoCancel.set(true) } }
     if (confirmDelete) AlertDialog(
         onDismissRequest = { confirmDelete = false },
         title = { Text("删除这条便签？") },
-        text = { Text("里面的图片和录音也会一起删掉。") },
+        text = { Text("里面的图片、录音和视频也会一起删掉。") },
         confirmButton = {
             TextButton({
                 confirmDelete = false
+                val cur = note
                 note = note.copy(title = "", blocks = listOf(Block(newId())), reminder = null)
-                deleteNote(stored); Nav.back()
+                deleteNote(cur); Nav.back()
             }) { Text("删除", color = P.danger) }
         },
         dismissButton = { TextButton({ confirmDelete = false }) { Text("取消") } },
@@ -315,20 +377,20 @@ fun NoteEditorPage(id: String) {
 
 @Composable
 private fun TopIcon(icon: ImageVector, tint: Color, onClick: () -> Unit) {
-    Box(Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
-        Icon(icon, null, Modifier.size(22.dp), tint = tint)
-    }
+    MdTopIcon(icon, null, tint, onClick)
 }
 
 @Composable
 private fun ToolBtn(icon: ImageVector, label: String, active: Boolean = false, onClick: () -> Unit) {
+    val pixel = Md.kind == MdKind.PIXEL
     Column(
-        Modifier.clip(RoundedCornerShape(12.dp)).background(if (active) P.mintSoft else Color.Transparent)
+        Modifier.clip(if (pixel) androidx.compose.foundation.shape.CutCornerShape(3.dp) else RoundedCornerShape(12.dp))
+            .background(if (active) (if (pixel) MdParchment else P.mintSoft) else Color.Transparent)
             .clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(icon, label, Modifier.size(22.dp), tint = if (active) P.mintDeep else P.ink)
-        Text(label, fontSize = 10.sp, color = P.sub)
+        MdIcon(icon, label, Modifier.size(22.dp), when { pixel && active -> MdWoodDark; pixel -> MdParchment; active -> P.mintDeep; else -> P.ink })
+        Text(label, fontSize = 10.sp, color = if (pixel) (if (active) MdWoodDark else MdParchment) else P.sub)
     }
 }
 
@@ -422,6 +484,9 @@ private fun ImageBlock(b: Block, onDelete: () -> Unit) {
 @Composable
 private fun AudioBlock(b: Block, onDelete: () -> Unit) {
     val st by NotePlayer.state.collectAsState()
+    val err by NotePlayer.error.collectAsState()
+    val toast = toaster()
+    LaunchedEffect(err) { err?.let { toast(it); NotePlayer.error.value = null } }
     val mine = st.file == b.file
     var pos by remember { mutableIntStateOf(0) }
     LaunchedEffect(mine, st.playing) {
@@ -429,7 +494,7 @@ private fun AudioBlock(b: Block, onDelete: () -> Unit) {
         if (!mine) pos = 0
     }
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(RoundedCornerShape(16.dp)).background(P.mintSoft).padding(10.dp),
+        Modifier.fillMaxWidth().padding(vertical = 6.dp).padding(end = 2.dp, bottom = 2.dp).mdBlock(P.pink).padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RoundIcon(if (mine && st.playing) Ic.Pause else Ic.Play, 40.dp) { b.file?.let { NotePlayer.toggle(it) } }
@@ -437,10 +502,7 @@ private fun AudioBlock(b: Block, onDelete: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(if (b.recorded) "录音" else b.text.ifBlank { "音频" }, fontSize = 14.sp, color = P.ink, fontWeight = FontWeight.Medium)
             Gap(4.dp)
-            Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(P.line)) {
-                val f = if (b.durationMs > 0) (pos.toFloat() / b.durationMs).coerceIn(0f, 1f) else 0f
-                Box(Modifier.fillMaxWidth(f).height(4.dp).background(P.mint))
-            }
+            MdMeter(if (b.durationMs > 0) pos * 100f / b.durationMs else 0f, P.mint, warnBelow = 0f)
         }
         Spacer(Modifier.width(10.dp))
         Text(if (mine) "${NoteMedia.fmt(pos.toLong())}/${NoteMedia.fmt(b.durationMs)}" else NoteMedia.fmt(b.durationMs),
@@ -495,7 +557,7 @@ private fun SmallText(text: String, color: Color = P.mintDeep, onClick: () -> Un
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FormatPanel(sp: TextSpec, onChange: (TextSpec) -> Unit) {
-    Column(Modifier.fillMaxWidth().background(P.card).padding(horizontal = 14.dp, vertical = 10.dp)) {
+    Column(Modifier.fillMaxWidth().background(mdSurface()).padding(horizontal = 14.dp, vertical = 10.dp)) {
         HRow(gap = 6.dp) {
             listOf("小", "正文", "大", "标题").forEachIndexed { i, s -> Pill(s, sp.size == i) { onChange(sp.copy(size = i)) } }
         }
@@ -543,7 +605,7 @@ private fun FmtToggle(label: String, on: Boolean, style: TextStyle, onClick: () 
 private fun RecordBar(rec: NoteRecorder, onStop: () -> Unit, onCancel: () -> Unit) {
     var now by remember { mutableStateOf(Time.now()) }
     LaunchedEffect(Unit) { while (true) { delay(250); now = Time.now() } }
-    Row(Modifier.fillMaxWidth().background(P.pinkSoft).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp).mdBlock(P.pink).padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(10.dp).clip(CircleShape).background(P.danger))
         Spacer(Modifier.width(8.dp))
         Text("正在录音 ${NoteMedia.fmt(now - rec.startedAt)}", Modifier.weight(1f), color = P.ink)

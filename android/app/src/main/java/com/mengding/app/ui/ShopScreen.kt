@@ -50,6 +50,7 @@ fun ShopScreen() {
     var cat by rememberSaveable { mutableStateOf(Nav.shopCategory) }
     // 从首页"食物 / 饮料 / 服装"按钮进来时切到对应分类
     androidx.compose.runtime.LaunchedEffect(Nav.shopCategory) { cat = Nav.shopCategory }
+    CoachFor("shop", listOf(Coach.Tip("shop_bulk", "一次买 5 个打八折，买了放进库存，喂宠物时先用库存")))
     PageScaffold("商店") {
         HRow {
             Text("我的萌点", fontSize = 14.sp, color = P.sub)
@@ -65,8 +66,7 @@ fun ShopScreen() {
                 .forEach { (k, label, icon) ->
                     val sel = cat == k
                     Column(
-                        Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).background(if (sel) P.mintSoft else P.card)
-                            .border(if (sel) 2.dp else 1.dp, if (sel) P.mint else P.line, RoundedCornerShape(20.dp))
+                        Modifier.weight(1f).padding(end = 3.dp, bottom = 3.dp).mdTile(sel, radius = 20.dp)
                             .clickable { cat = k; Nav.shopCategory = k }.padding(vertical = 10.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
@@ -106,20 +106,19 @@ private fun FoodShop(drink: Boolean) {
     Text(if (drink) "饮料补水分，有的还能补体力。" else "食物补饱食，蛋糕还能补体力。" +
         " 买了放进库存，在宠物部屋喂它时先用库存；一次买 5 个打八折。", fontSize = 12.sp, color = P.sub)
     Gap(8.dp)
+    val firstKey = Foods.all(ctx).filter { it.drink == drink }.minByOrNull { it.price }?.key
     Foods.all(ctx).filter { it.drink == drink }.sortedBy { it.price }.chunked(2).forEach { pair ->
       Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         pair.forEach { f ->
             val have = cfg.economy.pantry[f.key] ?: 0
             val fav = pet != null && pet.species in f.favorite
             Column(
-                Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).background(if (fav) P.pinkSoft else P.card)
-                    .border(1.dp, P.line, RoundedCornerShape(20.dp)).padding(10.dp),
+                Modifier.weight(1f).padding(end = 3.dp, bottom = 3.dp).mdTile(fav, P.pink, radius = 20.dp).padding(10.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
                     PixelIcon(f.key, 64.dp, food = true)
-                    if (have > 0) Text("×$have", Modifier.align(Alignment.BottomEnd).clip(RoundedCornerShape(8.dp))
-                        .background(P.mintSoft).padding(horizontal = 5.dp), fontSize = 11.sp, color = P.mintDeep)
+                    if (have > 0) Text("×$have", Modifier.align(Alignment.BottomEnd).mdTag().padding(horizontal = 5.dp), fontSize = 11.sp, color = P.mintDeep)
                     if (fav) Icon(Ic.Heart, "最爱", Modifier.align(Alignment.TopEnd).size(16.dp), tint = P.pink)
                 }
                 Text(f.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = P.ink)
@@ -131,7 +130,9 @@ private fun FoodShop(drink: Boolean) {
                 Gap(6.dp)
                 PriceButton(f.price, Modifier.fillMaxWidth()) { toast(Actions.buyFood(ctx, f.key, 1)) }
                 Gap(4.dp)
-                PriceButton(com.mengding.app.logic.Economy.bulkPrice(f.price, 5), Modifier.fillMaxWidth(), label = "5个 八折", primary = false) {
+                PriceButton(com.mengding.app.logic.Economy.bulkPrice(f.price, 5),
+                    Modifier.fillMaxWidth().then(if (f.key == firstKey) Modifier.coachTarget("shop_bulk") else Modifier),
+                    label = "5个 八折", primary = false) {
                     toast(Actions.buyFood(ctx, f.key, 5))
                 }
             }
@@ -153,14 +154,12 @@ private fun GameItemShop() {
             pair.forEach { it ->
                 val have = cfg.economy.gameItems[it.key] ?: 0
                 Column(
-                    Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).background(P.card)
-                        .border(1.dp, P.line, RoundedCornerShape(20.dp)).padding(10.dp),
+                    Modifier.weight(1f).padding(end = 3.dp, bottom = 3.dp).mdTile(radius = 20.dp).padding(10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Box(Modifier.size(64.dp), contentAlignment = Alignment.Center) {
                         PixelImg(it.icon, 56.dp)
-                        if (have > 0) Text("×$have", Modifier.align(Alignment.BottomEnd).clip(RoundedCornerShape(8.dp))
-                            .background(P.mintSoft).padding(horizontal = 5.dp), fontSize = 11.sp, color = P.mintDeep)
+                        if (have > 0) Text("×$have", Modifier.align(Alignment.BottomEnd).mdTag().padding(horizontal = 5.dp), fontSize = 11.sp, color = P.mintDeep)
                     }
                     Text(it.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = P.ink)
                     Text(it.desc, fontSize = 11.sp, color = P.sub, textAlign = TextAlign.Center, maxLines = 2)

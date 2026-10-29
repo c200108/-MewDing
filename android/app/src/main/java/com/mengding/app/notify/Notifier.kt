@@ -62,7 +62,9 @@ object Notifier {
                 enableVibration(false)
             },
         ))
-        val names = mapOf("cat" to "小猫", "dog" to "小狗", "guinea_pig" to "豚鼠", "sugar_glider" to "蜜袋鼯", "snake" to "小蛇", "lizard" to "蜥蜴")
+        // 每种宠物都要有自己的叫声渠道：以前只建了 6 种，其余 9 种（仓鼠、乌龟、兔子……）的提醒发到不存在的渠道，系统直接丢掉，
+        // 到点既不响也不震（2026-10-22 小米 17 上反馈的问题）
+        val names = com.mengding.app.logic.Catalog.all.associate { it.key to it.name }
         nm.createNotificationChannels(names.map { (k, n) ->
             NotificationChannel(petChannel(k), "提醒（${n}叫声）", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "用${n}叫声 + 震动提醒"
@@ -73,12 +75,21 @@ object Notifier {
         })
     }
 
+    /** 要发的渠道不在了（被用户在系统设置里删了、或旧版本没建）就重建一遍；建好的渠道再建不会改用户的设置 */
+    private fun ensureChannel(ctx: Context, id: String) {
+        val nm = ctx.getSystemService(NotificationManager::class.java)
+        if (nm.getNotificationChannel(id) == null) channels(ctx)
+    }
+
     private fun channelFor(quiet: Boolean): String = if (quiet) CH_SILENT else when (Store.cfg.settings.sound) {
         SoundMode.SOFT -> CH_SOFT
         SoundMode.DING -> CH_DING
         SoundMode.PET -> petChannel(PetSim.outing(Store.cfg)?.species ?: "cat")
         SoundMode.SILENT -> CH_SILENT
     }
+
+    /** 现在提醒走哪个渠道（提醒体检用）：按提示音设置选，勿扰时段外 */
+    fun reminderChannel(): String = channelFor(false)
 
     fun openApp(ctx: Context, tab: String? = null): PendingIntent = PendingIntent.getActivity(
         ctx, (tab ?: "home").hashCode(),
@@ -105,15 +116,22 @@ object Notifier {
             note.blocks.firstOrNull { it.text.isNotBlank() }?.text?.take(40) ?: "便签提醒"
         }
         val sound = r.mode == com.mengding.app.data.RemindMode.BUBBLE_SOUND
-        val bubbled = com.mengding.app.pet.PetService.instance?.speak(text, sound = sound, noteId = note.id) ?: false
-        if (!NotificationManagerCompat.from(ctx).areNotificationsEnabled()) return
+        // 桌面宠物在的话冒气泡；叫声和震动一律交给系统通知（宠物叫声渠道）来放：
+        // 以前气泡弹出来就改发静音通知、自己用「媒体音量」放叫声 + 后台震动，结果媒体音量为 0、或系统不让后台 App 震动时（安卓 13 起、小米等更严），到点什么都没有
+        val bubbled = com.mengding.app.pet.PetService.instance?.speak(text, sound = false, noteId = note.id) ?: false
+        if (!NotificationManagerCompat.from(ctx).areNotificationsEnabled()) {
+            // 通知被关了：只能自己叫一声、震一下（用提醒类声音和震动属性，后台也能出声）
+            if (sound) { PetSim.outing(Store.cfg)?.let { com.mengding.app.pet.PetVoice.alert(ctx, it.species) } }
+            return
+        }
         val pet = PetSim.outing(Store.cfg)
-        val channel = if (sound && !bubbled) petChannel(pet?.species ?: "cat") else CH_NOTE_QUIET
+        val channel = if (sound) petChannel(pet?.species ?: "cat") else CH_NOTE_QUIET
+        ensureChannel(ctx, channel)
         val b = NotificationCompat.Builder(ctx, channel)
             .setSmallIcon(R.drawable.ic_stat_pet)
             .setColor(0xFF2FB38C.toInt())
             .setAutoCancel(true)
-            .setContentTitle("${pet?.name ?: "萌叮"} 提醒你")
+            .setContentTitle("叮～${pet?.name ?: "萌叮"} 提醒你")
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(openNote(ctx, note.id))
@@ -135,6 +153,7 @@ object Notifier {
     fun remind(ctx: Context, due: Reminders.Due) {
         if (due.kind == Kind.NOTE) { noteRemind(ctx, due.extra); return }
         if (due.kind == Kind.MEAL) mealBubble(ctx, due)
+        if (due.kind == Kind.CUSTOM || due.kind == Kind.TEST) customBubble(ctx, due)
         if (!NotificationManagerCompat.from(ctx).areNotificationsEnabled()) return
         val st = Store.cfg
         val pet = PetSim.outing(st)
@@ -144,7 +163,9 @@ object Notifier {
         val id = idFor(due.kind, due.extra)
         val cup = st.settings.cupMl.coerceIn(100, 400)
         var petAction = "idle"
-        val b = NotificationCompat.Builder(ctx, channelFor(quiet))
+        val ch = channelFor(quiet)
+        ensureChannel(ctx, ch)
+        val b = NotificationCompat.Builder(ctx, ch)
             .setSmallIcon(R.drawable.ic_stat_pet)
             .setColor(0xFF2FB38C.toInt())
             .setAutoCancel(true)
@@ -156,8 +177,8 @@ object Notifier {
             Kind.WATER -> {
                 val total = Actions.todayWater()
                 petAction = "drink"
-                b.setContentTitle("$petName 提醒你喝水啦")
-                    .setContentText("今天喝了 ${total}ml，目标 ${st.settings.waterGoalMl}ml")
+                b.setContentTitle("叮～该喝水啦")
+                    .setContentText("$petName 提醒你：今天喝了 ${total}ml，目标 ${st.settings.waterGoalMl}ml")
                     .addAction(0, "喝了 ${cup}ml", action(ctx, ActionReceiver.DRINK, id))
                     .addAction(0, "稍后 10 分钟", action(ctx, ActionReceiver.SNOOZE, id, Kind.WATER.name))
                     .addAction(0, "今天不提醒", action(ctx, ActionReceiver.WATER_OFF, id))
@@ -172,26 +193,26 @@ object Notifier {
                     pet.hydration < 50 -> "${pet.name} 渴啦，"
                     else -> ""
                 }
-                b.setContentTitle("${due.extra}时间到")
+                b.setContentTitle("叮～${due.extra}时间到")
                     .setContentText("${petNeed}你也该吃饭了")
                     .addAction(0, "吃了", action(ctx, ActionReceiver.ATE, id, due.extra))
                     .addAction(0, "稍后 15 分钟", action(ctx, ActionReceiver.SNOOZE, id, Kind.MEAL.name + "|" + due.extra))
             }
             Kind.SLEEP_PRE -> {
                 petAction = "tired"
-                b.setContentTitle("还有 30 分钟就该睡觉啦")
+                b.setContentTitle("叮～还有 30 分钟就该睡觉啦")
                     .setContentText("$petName 开始打哈欠了，放下手机准备洗漱吧")
             }
             Kind.SLEEP -> {
                 petAction = "sleep"
-                b.setContentTitle("该睡觉啦")
+                b.setContentTitle("叮～该睡觉啦")
                     .setContentText("按时睡觉，$petName 今晚体力恢复翻倍")
                     .addAction(0, "去睡了", action(ctx, ActionReceiver.SLEEP, id))
                     .addAction(0, "再等 15 分钟", action(ctx, ActionReceiver.SNOOZE, id, Kind.SLEEP.name))
             }
             Kind.MORNING -> {
                 petAction = "energetic"
-                b.setContentTitle("早上好")
+                b.setContentTitle("叮～早上好")
                     .setContentText("昨晚睡得怎么样？")
                     .addAction(0, "睡得好", action(ctx, ActionReceiver.WAKE, id, "3"))
                     .addAction(0, "一般", action(ctx, ActionReceiver.WAKE, id, "2"))
@@ -200,23 +221,39 @@ object Notifier {
             Kind.PERIOD_SOON -> {
                 petAction = "period"
                 val days = st.settings.periodAdvanceDays
-                if (disguise) b.setContentTitle("该照顾自己啦").setContentText("最近几天注意休息")
-                else b.setContentTitle("大姨妈大概还有 $days 天").setContentText("提前备好用品，少吃生冷")
+                if (disguise) b.setContentTitle("叮～该照顾自己啦").setContentText("最近几天注意休息")
+                else b.setContentTitle("叮～大姨妈大概还有 $days 天").setContentText("提前备好用品，少吃生冷")
             }
             Kind.PERIOD_CARE -> {
                 petAction = "period"
                 val tip = Period.tipOfDay(Period.careTips)
-                b.setContentTitle(if (disguise) "该照顾自己啦" else "经期关怀").setContentText(tip)
+                b.setContentTitle(if (disguise) "叮～该照顾自己啦" else "叮～经期关怀").setContentText(tip)
             }
             Kind.NOTE -> return
+            Kind.CUSTOM -> {
+                petAction = "energetic"
+                val (rid, slot) = due.extra.split("|", limit = 2).let { it[0] to it.getOrElse(1) { "" } }
+                val r = Store.priv.customs.firstOrNull { it.id == rid } ?: return
+                val done = com.mengding.app.logic.Customs.doneCount(Store.priv, rid, Time.today())
+                b.setContentTitle(com.mengding.app.logic.Customs.title(r))
+                    .setContentText("$petName 陪你一起" + if (r.mode == "interval") "，今天已经完成 $done 次" else "（$slot）")
+                    .addAction(0, "完成了", action(ctx, ActionReceiver.CUSTOM_DONE, id, due.extra))
+                    .addAction(0, "稍后 10 分钟", action(ctx, ActionReceiver.SNOOZE, id, Kind.CUSTOM.name + "|" + due.extra))
+                    .addAction(0, "今天跳过", action(ctx, ActionReceiver.CUSTOM_SKIP, id, rid))
+            }
+            Kind.TEST -> {
+                petAction = "energetic"
+                b.setContentTitle("叮～这是一条测试提醒")
+                    .setContentText("能看到、听到它，说明$petName 的提醒通路是好的")
+            }
             Kind.CARE_SOON, Kind.CARE_TIP -> {
                 petAction = "pet"
                 val person = Store.priv.care.firstOrNull { it.id == due.extra } ?: return
                 if (due.kind == Kind.CARE_SOON) {
-                    b.setContentTitle(if (disguise) "关心一下 ${person.name}" else "${person.name} 的经期大概还有 2 天")
+                    b.setContentTitle(if (disguise) "叮～关心一下 ${person.name}" else "叮～${person.name} 的经期大概还有 2 天")
                         .setContentText("记得备点红糖，少惹 TA 生气")
                 } else {
-                    b.setContentTitle("关心一下 ${person.name}").setContentText(Period.tipOfDay(Period.careTaTips))
+                    b.setContentTitle("叮～关心一下 ${person.name}").setContentText(Period.tipOfDay(Period.careTaTips))
                 }
             }
         }
@@ -241,10 +278,26 @@ object Notifier {
             pet.satiety < 50 -> "我肚子也饿了，"
             else -> ""
         }
-        val text = "${due.extra}时间到啦！${need}一起去吃饭吧～\n（吃完点我记一下）"
-        com.mengding.app.pet.PetService.instance?.speak(text, sound = !quiet, durationMs = 10 * 60_000L, action = "eat", onTap = {
+        val text = "叮～${due.extra}时间到啦！${need}一起去吃饭吧～\n（吃完点我记一下）"
+        com.mengding.app.pet.PetService.instance?.speak(text, sound = false, durationMs = 10 * 60_000L, action = "eat", onTap = {
             val msg = Actions.eat(ctx, due.extra, fromReminder = true)
             cancel(ctx, idFor(Kind.MEAL, due.extra))
+            android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
+        })
+    }
+
+    /** 自定义提醒 / 测试提醒到点：桌面宠物冒气泡（和饭点气泡一样），点气泡 = 完成了 */
+    private fun customBubble(ctx: Context, due: Reminders.Due) {
+        if (due.kind == Kind.TEST) {
+            com.mengding.app.pet.PetService.instance?.speak("叮～这是一条测试提醒，提醒通路是好的", sound = false, durationMs = 30_000L)
+            return
+        }
+        val (rid, slot) = due.extra.split("|", limit = 2).let { it[0] to it.getOrElse(1) { "" } }
+        val r = Store.priv.customs.firstOrNull { it.id == rid } ?: return
+        val text = com.mengding.app.logic.Customs.title(r) + "\n（做完了点我打个勾）"
+        com.mengding.app.pet.PetService.instance?.speak(text, sound = false, durationMs = 10 * 60_000L, onTap = {
+            val msg = Actions.customDone(ctx, rid, slot.ifBlank { null }, fromReminder = true)
+            cancel(ctx, idFor(Kind.CUSTOM, due.extra))
             android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
         })
     }

@@ -37,6 +37,10 @@ object Weather {
     var code by androidx.compose.runtime.mutableStateOf<Int?>(null)
         private set
 
+    /** 最近一次查到的气温（℃），3D 小屋的天气同步用 */
+    var tempC by androidx.compose.runtime.mutableStateOf<Int?>(null)
+        private set
+
     fun rainy(c: Int? = code) = c != null && (c in 51..67 || c in 80..82 || c in 95..99)
     fun snowy(c: Int? = code) = c != null && (c in 71..77 || c in 85..86)
 
@@ -58,6 +62,7 @@ object Weather {
                 val cur = json.getJSONObject("current")
                 val code = cur.getInt("weather_code")
                 this@Weather.code = code
+                this@Weather.tempC = Math.round(cur.getDouble("temperature_2m")).toInt()
                 "${icon(code)} ${name(code)} ${Math.round(cur.getDouble("temperature_2m"))}℃"
             }.getOrNull()
         } ?: return "天气暂不可用"
@@ -65,7 +70,7 @@ object Weather {
         return text
     }
 
-    fun clear() { cache = null; code = null }
+    fun clear() { cache = null; code = null; tempC = null }
 
     /** 先用 30 分钟内的上次位置，没有就现场取一次（最多等 10 秒） */
     private suspend fun location(ctx: Context): Location? = withContext(Dispatchers.Main) {
@@ -114,7 +119,7 @@ object Weather {
         0 -> "☀"; 1, 2 -> "⛅"; 3 -> "☁"; 45, 48 -> "〰"; in 51..67, in 80..82 -> "☂"; in 71..77, in 85..86 -> "❄"; in 95..99 -> "⚡"; else -> "☁"
     }
 
-    private fun name(code: Int) = when (code) {
+    fun name(code: Int) = when (code) {
         0 -> "晴"; 1 -> "晴间多云"; 2 -> "多云"; 3 -> "阴"; 45, 48 -> "雾"; in 51..57 -> "毛毛雨"; in 61..67 -> "雨"
         in 71..77 -> "雪"; in 80..82 -> "阵雨"; in 85..86 -> "阵雪"; in 95..99 -> "雷雨"; else -> ""
     }

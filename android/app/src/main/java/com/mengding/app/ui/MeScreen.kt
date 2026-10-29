@@ -20,10 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -35,6 +32,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -85,7 +85,15 @@ fun MeScreen() {
             Divider()
             NavRow(Ic.Image, "换桌面图标", "默认白猫或六只像素宠物") { Nav.go("icon") }
             Divider()
-            NavRow(Ic.Chart, "统计", "最近 7 天的喝水和睡觉") { Nav.go("stats") }
+            NavRow(Ic.Chart, "统计", "喝水日历、吃饭记录、最近 7 晚睡觉") { Nav.go("stats") }
+            Divider()
+            NavRow(Ic.Medal, "成就徽章", "已点亮 ${cfg.economy.badges.count { it.value > 0 }} / ${com.mengding.app.logic.Badges.all.size} 个") { Nav.go("badges") }
+            Divider()
+            NavRow(Ic.Speech, "重新显示新手提示", "首页、便签、商店等页面的小提示再看一遍") {
+                Store.update { it.copy(settings = it.settings.copy(tipsSeen = emptyList())) }
+                com.mengding.app.pet.PetService.instance?.applySettings()
+                MdToasts.show("好的，进到各个页面时会再提示一次")
+            }
         }
         SectionTitle("安全")
         MCard(padding = 12.dp) {
@@ -145,9 +153,15 @@ fun ProfilePage() {
 fun ReminderSettingsPage() {
     val ctx = LocalContext.current
     val cfg by Store.config.collectAsState()
+    val priv by Store.private.collectAsState()
     val s = cfg.settings
     fun set(f: (Settings) -> Settings) { setS(f); Reminders.reschedule(ctx); Refresh.all(ctx) }
     PageScaffold("提醒设置") {
+        MCard(padding = 12.dp) {
+            NavRow(Ic.Shield, "提醒体检", "一项项查提醒为什么不响，还能发一条测试提醒") { Nav.go("health") }
+            Divider()
+            NavRow(Ic.Pill, "自定义提醒", priv.customs.takeIf { it.isNotEmpty() }?.joinToString("、") { it.name } ?: "吃药、久坐、护眼、护肤，或者自己建") { Nav.go("customs") }
+        }
         SectionTitle("喝水")
         MCard(padding = 12.dp) {
             ToggleRow("喝水提醒", checked = s.waterOn) { v -> set { it.copy(waterOn = v) } }
@@ -303,8 +317,7 @@ fun IconPage() {
             IconSwitcher.options.forEach { (key, label) ->
                 val sel = cfg.settings.iconAlias == key
                 Column(
-                    Modifier.width(100.dp).clip(RoundedCornerShape(18.dp))
-                        .border(2.dp, if (sel) P.mint else P.line, RoundedCornerShape(18.dp))
+                    Modifier.width(100.dp).padding(end = 3.dp, bottom = 3.dp).mdTile(sel)
                         .clickable { IconSwitcher.apply(ctx, key); toast("已换成「$label」") }.padding(10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
@@ -322,36 +335,24 @@ fun IconPage() {
 
 @Composable
 fun StatsPage() {
-    val cfg by Store.config.collectAsState()
     val priv by Store.private.collectAsState()
-    val days = (6 downTo 0).map { Time.today().minusDays(it.toLong()) }
-    val water = days.map { d -> priv.water.filter { Time.dateOf(it.t) == d }.sumOf { it.ml } }
-    val goal = cfg.settings.waterGoalMl
+    val cfg by Store.config.collectAsState()
+    val today = Time.today()
+    val thisMonth = java.time.YearMonth.from(today)
+    val days = (6 downTo 0).map { today.minusDays(it.toLong()) }
+    // 喝水日历和吃饭清单共用一个月份，左右切换；最早能翻到有记录的那个月
+    var month by remember { mutableStateOf(thisMonth) }
+    val firstDay = listOfNotNull(
+        priv.water.minOfOrNull { it.t }?.let { Time.dateOf(it) },
+        priv.meals.mapNotNull { runCatching { java.time.LocalDate.parse(it.day) }.getOrNull() }.minOrNull(),
+    ).minOrNull()
+    val first = firstDay?.let { java.time.YearMonth.from(it) }?.coerceAtMost(thisMonth) ?: thisMonth
     PageScaffold("统计") {
-        SectionTitle("最近 7 天喝水")
-        MCard {
-            val max = maxOf(goal, water.maxOrNull() ?: 0).toFloat()
-            val bar = P.blue; val line = P.pink; val bgc = P.line
-            Canvas(Modifier.fillMaxWidth().height(140.dp)) {
-                val w = size.width / 7
-                water.forEachIndexed { i, ml ->
-                    val h = size.height * ml / max
-                    drawRoundRect(bgc, Offset(i * w + w * 0.2f, 0f), Size(w * 0.6f, size.height),
-                        androidx.compose.ui.geometry.CornerRadius(12f))
-                    drawRoundRect(bar, Offset(i * w + w * 0.2f, size.height - h), Size(w * 0.6f, h),
-                        androidx.compose.ui.geometry.CornerRadius(12f))
-                }
-                val gy = size.height - size.height * goal / max
-                drawLine(line, Offset(0f, gy), Offset(size.width, gy), strokeWidth = 3f)
-            }
-            Row(Modifier.fillMaxWidth()) {
-                days.forEach { d -> Text("${d.monthValue}/${d.dayOfMonth}", Modifier.weight(1f), fontSize = 11.sp, color = P.sub,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
-            }
-            Gap(6.dp)
-            Text("粉线是每天目标 ${goal}ml；7 天平均 ${water.average().toInt()}ml，达标 ${water.count { it >= goal }} 天",
-                fontSize = 12.sp, color = P.sub)
-        }
+        MonthSwitcher(month, canPrev = month > first, canNext = month < thisMonth) { month = it }
+        SectionTitle("喝水日历")
+        WaterCalendar(month, cfg.settings.waterGoalMl)
+        SectionTitle("吃饭记录")
+        MealDays(month)
         SectionTitle("最近 7 晚睡觉")
         MCard(padding = 12.dp) {
             days.forEach { d ->
@@ -368,10 +369,106 @@ fun StatsPage() {
                 }
             }
         }
-        SectionTitle("吃饭")
-        MCard {
-            val cnt = days.sumOf { d -> priv.meals.count { it.day == d.toString() } }
-            Text("最近 7 天记了 $cnt 餐（计划 ${cfg.profile.meals.size * 7} 餐）", fontSize = 14.sp, color = P.ink)
+    }
+}
+
+@Composable
+private fun MonthSwitcher(month: java.time.YearMonth, canPrev: Boolean, canNext: Boolean, onChange: (java.time.YearMonth) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("‹ 上个月", Modifier.clip(RoundedCornerShape(12.dp)).clickable(enabled = canPrev) { onChange(month.minusMonths(1)) }
+            .padding(horizontal = 10.dp, vertical = 6.dp), fontSize = 14.sp, color = if (canPrev) P.mintDeep else P.line)
+        Text("${month.year}年${month.monthValue}月", Modifier.weight(1f), fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
+            color = P.ink, textAlign = TextAlign.Center)
+        Text("下个月 ›", Modifier.clip(RoundedCornerShape(12.dp)).clickable(enabled = canNext) { onChange(month.plusMonths(1)) }
+            .padding(horizontal = 10.dp, vertical = 6.dp), fontSize = 14.sp, color = if (canNext) P.mintDeep else P.line)
+    }
+}
+
+/** 喝水月历：一格一天，写当天喝了多少毫升；达标的格子满蓝，没达标按喝的比例浅蓝，今天描粉边 */
+@Composable
+private fun WaterCalendar(month: java.time.YearMonth, goal: Int) {
+    val priv by Store.private.collectAsState()
+    val today = Time.today()
+    val byDay = remember(priv.water, month) {
+        priv.water.groupBy { Time.dateOf(it.t) }.filterKeys { java.time.YearMonth.from(it) == month }
+            .mapValues { (_, l) -> l.sumOf { it.ml } }
+    }
+    val lead = month.atDay(1).dayOfWeek.value - 1      // 周一开头
+    val cells = lead + month.lengthOfMonth()
+    MCard(padding = 10.dp) {
+        Row(Modifier.fillMaxWidth()) {
+            listOf("一", "二", "三", "四", "五", "六", "日").forEach {
+                Text(it, Modifier.weight(1f), fontSize = 12.sp, color = P.sub, textAlign = TextAlign.Center)
+            }
+        }
+        Gap(4.dp)
+        for (row in 0 until (cells + 6) / 7) {
+            Row(Modifier.fillMaxWidth()) {
+                for (col in 0..6) {
+                    val i = row * 7 + col - lead
+                    Box(Modifier.weight(1f).padding(2.dp)) {
+                        if (i in 0 until month.lengthOfMonth()) {
+                            val d = month.atDay(i + 1)
+                            val ml = byDay[d] ?: 0
+                            val future = d.isAfter(today)
+                            val met = ml >= goal
+                            val bg = when {
+                                future -> Color.Transparent
+                                met -> P.blue
+                                ml > 0 -> P.blue.copy(alpha = 0.12f + 0.4f * ml / goal.coerceAtLeast(1))
+                                else -> P.line.copy(alpha = 0.45f)
+                            }
+                            Column(
+                                Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(8.dp)).background(bg)
+                                    .then(if (d == today) Modifier.border(2.dp, P.pink, RoundedCornerShape(8.dp)) else Modifier),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                            ) {
+                                Text("${d.dayOfMonth}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                                    color = if (met) Color.White else if (future) P.sub.copy(alpha = 0.5f) else P.ink)
+                                if (!future) Text(if (ml > 0) "$ml" else "-", fontSize = 10.sp, maxLines = 1,
+                                    color = if (met) Color.White else P.sub)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Gap(6.dp)
+        val counted = if (month == java.time.YearMonth.from(today)) today.dayOfMonth else month.lengthOfMonth()
+        Text("格子里是当天喝了多少 ml，满格蓝色 = 达到每天目标 ${goal}ml。这个月达标 ${byDay.count { it.value >= goal }} 天，" +
+            "日均 ${byDay.values.sum() / counted.coerceAtLeast(1)}ml", fontSize = 12.sp, color = P.sub)
+    }
+}
+
+/** 吃饭按天列：每一餐几点打的卡、记了吃什么（有备注才显示）；新的日子在上面 */
+@Composable
+private fun MealDays(month: java.time.YearMonth) {
+    val cfg by Store.config.collectAsState()
+    val priv by Store.private.collectAsState()
+    val today = Time.today()
+    val last = if (month == java.time.YearMonth.from(today)) today else month.atEndOfMonth()
+    val dayList = (last.dayOfMonth downTo 1).map { month.atDay(it) }
+    val byDay = remember(priv.meals) { priv.meals.groupBy { it.day } }
+    val week = "一二三四五六日"
+    MCard(padding = 12.dp) {
+        val total = dayList.sumOf { byDay[it.toString()]?.size ?: 0 }
+        Text("这个月记了 $total 餐（按现在的饭点算，计划 ${cfg.profile.meals.size * dayList.size} 餐）", fontSize = 13.sp, color = P.sub)
+        dayList.forEach { d ->
+            Gap(8.dp)
+            Divider()
+            Gap(8.dp)
+            val logs = (byDay[d.toString()] ?: emptyList()).sortedBy { it.t }
+            Text("${d.monthValue}月${d.dayOfMonth}日 周${week[d.dayOfWeek.value - 1]}" + if (d == today) " · 今天" else "",
+                fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = P.ink)
+            if (logs.isEmpty()) Text("这天没有吃饭记录", Modifier.padding(start = 8.dp, top = 3.dp), fontSize = 13.sp, color = P.sub)
+            logs.forEach { m ->
+                Row(Modifier.fillMaxWidth().padding(start = 8.dp, top = 4.dp)) {
+                    Text(m.label, Modifier.width(52.dp), fontSize = 13.sp, color = P.gold, fontWeight = FontWeight.SemiBold)
+                    Text("${Time.hm(m.t)} 打卡", Modifier.width(78.dp), fontSize = 13.sp, color = P.sub)
+                    if (m.note.isNotBlank()) Text(m.note, Modifier.weight(1f), fontSize = 13.sp, color = P.ink)
+                }
+            }
         }
     }
 }
@@ -494,17 +591,31 @@ fun AboutPage() {
             Gap(8.dp)
             Text("这是给亲友试用的早期版本。经期预测仅供参考，不构成医疗建议。", fontSize = 13.sp, color = P.sub)
         }
-        SectionTitle("小游戏音乐音效（CC0 开源素材，致谢）")
+        // 卡片之间留够空：奶油风有柔和投影、漫画 / 像素风有硬投影，挨着放会叠在一起
+        Gap(14.dp)
+        UpdateCard()
+        Gap(14.dp)
         MCard {
-            listOf(
-                "音效：Juhani Junkala《The Essential Retro Video Game Sound Effects Collection》",
-                "萌宠吃豆背景音乐：congusbongus《Cunning plan》",
-                "萌叮大冒险背景音乐：LordZintick《The Arplands》",
-                "萌宠连连看背景音乐：cosmac《8 Bit Concentration Loop》",
-                "以上均来自 OpenGameArt.org",
-            ).forEach { Text("· $it", fontSize = 12.sp, color = P.sub, modifier = Modifier.padding(vertical = 2.dp)) }
+            NavRow(Ic.Note, "用户协议", "原创素材使用须经作者许可") { Nav.go("terms") }
+            NavRow(Ic.Shield, "开源许可", "用到的开源项目和素材") { Nav.go("licenses") }
+            NavRow(Ic.Speech, "联系作者", "问题反馈、合作、素材使用许可") { Nav.go("contact") }
         }
         Spacer(Modifier.height(1.dp))
+    }
+}
+
+/** 气泡样式预览：用场景里同一套画法画一个「你好呀」，尾巴指向下方中间 */
+@Composable
+private fun BubblePreview(style: String, modifier: Modifier) {
+    val ctx = LocalContext.current
+    val bubble = remember { SceneBubble() }
+    val bounds = remember { android.graphics.RectF() }
+    androidx.compose.foundation.Canvas(modifier) {
+        drawContext.canvas.nativeCanvas.let { nc ->
+            bounds.set(2f, 2f, size.width - 2f, size.height - 2f)
+            bubble.draw(nc, "你好呀", 0.0, size.width / 2, size.height - 2f, 12f * density, 12f * density, false,
+                bounds, density, density * .85f, BubbleSkins.of(ctx, style), pop = false)
+        }
     }
 }
 
@@ -535,6 +646,19 @@ fun SpeechPage() {
         }
         Gap(8.dp)
         Text("需要打开「宠物显示 → 桌面悬浮宠物」才能在桌面上看到气泡；你设定的睡觉时段里不说话。", fontSize = 12.sp, color = P.sub)
+        SectionTitle("气泡样式（首页 2D 场景）")
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            BubbleSkins.styles.forEach { (k, label) ->
+                Column(Modifier.weight(1f).clip(RoundedCornerShape(14.dp))
+                    .border(2.dp, if (s.bubbleStyle == k) P.mint else P.line, RoundedCornerShape(14.dp))
+                    .background(Color(0xFFDDEFD9)).clickable { setS { it.copy(bubbleStyle = k) } }.padding(vertical = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    BubblePreview(k, Modifier.fillMaxWidth().height(54.dp))
+                    Text(label, fontSize = 11.sp, color = if (s.bubbleStyle == k) P.mintDeep else P.ink,
+                        fontWeight = if (s.bubbleStyle == k) FontWeight.Bold else FontWeight.Normal)
+                }
+            }
+        }
         SectionTitle("气泡里的话（${s.phrases.size} 句，随机说）")
         MCard(padding = 12.dp) {
             s.phrases.forEachIndexed { i, ph ->
@@ -584,6 +708,36 @@ fun SpeechPage() {
     }
 }
 
+/** 3D 小屋的美术风格。Unity 运行时一个进程只能起一次，已经进过首页的话要重启 App 才换得过来。 */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun SceneStylePicker(current: String) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var askRestart by remember { mutableStateOf(false) }
+    SectionTitle("3D 小屋风格")
+    Text("「微体素」是一格一格的小方块；「HD-2D」是立体低模 + 像素贴图，带窗口光束和远景小镇。" +
+        "首页只显示卧室，点「更多 ›」「宠物部屋」或卧室的门会展开客厅和院子。选好后重启应用生效。", fontSize = 12.sp, color = P.sub)
+    Gap(8.dp)
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf("voxel" to "微体素", "hd2d" to "HD-2D").forEach { (k, label) ->
+            Pill(label, current == k) {
+                if (current == k) return@Pill
+                setS { it.copy(sceneStyle = k) }
+                if (com.mengding.app.unity.UnityHost.started && k != com.mengding.app.unity.UnityHost.launchStyle) askRestart = true
+            }
+        }
+    }
+    if (askRestart) {
+        AlertDialog(
+            onDismissRequest = { askRestart = false },
+            title = { Text("重启后生效") },
+            text = { Text("3D 小屋要重新启动应用才能换风格。现在重启吗？你的数据都已保存。") },
+            confirmButton = { TextButton({ askRestart = false; com.mengding.app.unity.UnityHost.restartApp(ctx) }) { Text("立即重启") } },
+            dismissButton = { TextButton({ askRestart = false }) { Text("稍后") } },
+        )
+    }
+}
+
 /** 界面主题选择：6 套（经典 + 5 套插画主题），点一下立即生效 */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -592,23 +746,27 @@ fun ThemePage() {
     val cfg by Store.config.collectAsState()
     PageScaffold("界面主题") {
         SectionTitle("首页动态背景")
-        Text("「自动」按时间换：清晨小屋、上午樱花河畔、下午雨后小街、傍晚秋日林荫道、夜晚河畔摩天轮、深夜少女房间；" +
+        Text("「3D 小屋」是新的立体像素卧室，宠物会在里面走动、吃喝、换装（测试中，只支持 64 位手机）。" +
+            "「自动」按时间换 2D 场景：清晨小屋、上午樱花河畔、下午雨后小街、傍晚秋日林荫道、夜晚河畔摩天轮、深夜少女房间；" +
             "开了本地天气的话下雨会下雨、下雪换雪夜公园；12 月晚上是圣诞客厅。也可以固定一个喜欢的。", fontSize = 12.sp, color = P.sub)
         Gap(8.dp)
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val on3d = com.mengding.app.unity.UnityHost.supported && cfg.settings.home3d
+            if (com.mengding.app.unity.UnityHost.supported) Pill("3D 小屋", on3d) { setS { it.copy(home3d = true) } }
             (listOf("auto" to "自动") + Scenes.ALL.toList()).forEach { (k, label) ->
-                Pill(label, cfg.settings.homeScene == k) { setS { it.copy(homeScene = k) } }
+                Pill(label, !on3d && cfg.settings.homeScene == k) { setS { it.copy(homeScene = k, home3d = false) } }
             }
         }
+        if (com.mengding.app.unity.UnityHost.supported) SceneStylePicker(cfg.settings.sceneStyle)
+        StylePicker(cfg.settings.uiStyle)
         SectionTitle("界面主题")
         Text("主题会换掉主色、底部标签和首页功能按钮的图标、Logo 和启动页。宠物本身还是像素画风。", fontSize = 13.sp, color = P.sub)
         Gap()
         Themes.all.forEach { t ->
             val sel = cfg.settings.uiTheme == t.key
             Column(
-                Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(RoundedCornerShape(22.dp)).background(P.card)
-                    .border(if (sel) 2.dp else 1.dp, if (sel) t.primary else P.line, RoundedCornerShape(22.dp))
+                Modifier.fillMaxWidth().padding(bottom = 12.dp, end = 3.dp).mdTile(sel, t.primary, radius = 22.dp)
                     .clickable { setS { it.copy(uiTheme = t.key) }; toast("已换成「${t.name}」") }.padding(14.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -688,5 +846,78 @@ fun MealTimesEditor() {
             },
             dismissButton = { TextButton({ renaming = -1 }) { Text("取消") } },
         )
+    }
+}
+
+/** 界面风格：弹窗、提示、按钮、开关、输入框、日期时间选择的 4 套画风，每套画一个小弹窗当预览，点「试一下」弹出真的 */
+@Composable
+private fun StylePicker(current: String) {
+    val toast = toaster()
+    var demo by remember { mutableStateOf<String?>(null) }
+    SectionTitle("界面风格（弹窗与控件）")
+    Text("所有弹窗、提示条、按钮、开关、输入框和日期时间选择都会换成这套画风，主色跟着下面的界面主题。", fontSize = 13.sp, color = P.sub)
+    Gap()
+    MdStyles.all.chunked(2).forEach { row ->
+        Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            row.forEach { st ->
+                val sel = st.key == current
+                androidx.compose.runtime.CompositionLocalProvider(LocalMdStyle provides st) {
+                    Column(
+                        Modifier.weight(1f).clip(RoundedCornerShape(18.dp))
+                            .border(if (sel) 2.dp else 1.dp, if (sel) P.mint else P.line, RoundedCornerShape(18.dp))
+                            .background(P.cream).clickable { setS { it.copy(uiStyle = st.key) }; toast("已换成「${st.name}」") }
+                            .padding(12.dp),
+                    ) {
+                        // 迷你弹窗
+                        Column(Modifier.fillMaxWidth().padding(end = 5.dp, bottom = 5.dp).mdPanel(strong = true).padding(10.dp)) {
+                            Text("领取奖励？", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = P.ink)
+                            Gap(6.dp)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                MdSwitch(true, {})
+                                Spacer(Modifier.weight(1f))
+                                MdButton({ demo = st.key }, Modifier.height(30.dp), role = MdRole.SOLID,
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
+                                    Text("试一下", fontSize = 12.sp)
+                                }
+                            }
+                        }
+                        Gap(8.dp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(st.name, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = P.ink)
+                            if (sel) { Spacer(Modifier.width(6.dp)); Text("使用中", fontSize = 11.sp, color = P.mintDeep) }
+                        }
+                        Text(st.desc, fontSize = 11.sp, color = P.sub, lineHeight = 15.sp)
+                    }
+                }
+            }
+        }
+    }
+    demo?.let { key ->
+        androidx.compose.runtime.CompositionLocalProvider(LocalMdStyle provides MdStyles.of(key)) {
+            var on by remember { mutableStateOf(true) }
+            var name by remember { mutableStateOf("") }
+            var pickDate by remember { mutableStateOf(false) }
+            MdDialog(
+                onDismissRequest = { demo = null },
+                title = { Text("领取奖励？") },
+                text = {
+                    Column {
+                        Text("今天的喝水任务完成啦，可以领 20 萌点。")
+                        Gap(10.dp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("同时提醒明天", Modifier.weight(1f)); MdSwitch(on, { on = it })
+                        }
+                        Gap(8.dp)
+                        OutlinedTextField(name, { name = it.take(12) }, Modifier.fillMaxWidth(), label = { Text("给奖励起个名字") },
+                            placeholder = { Text("比如：小鱼干") }, singleLine = true)
+                        Gap(8.dp)
+                        TextButton({ pickDate = true }) { Text("看看日期选择") }
+                    }
+                },
+                confirmButton = { TextButton({ demo = null; MdToasts.show("领取成功，萌点 +20") }) { Text("领取") } },
+                dismissButton = { TextButton({ demo = null }) { Text("取消") } },
+            )
+            if (pickDate) DateDialog({ pickDate = false }) { pickDate = false; MdToasts.show("选了 $it") }
+        }
     }
 }

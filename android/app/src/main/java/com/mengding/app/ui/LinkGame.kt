@@ -18,9 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -63,10 +61,10 @@ import kotlin.random.Random
  */
 
 internal enum class LinkDiff(val key: String, val label: String, val cols: Int, val rows: Int, val kinds: Int, val time: Int, val reward: Int) {
-    EASY("easy", "简单", 6, 8, 6, 180, 2),
-    NORMAL("normal", "普通", 7, 10, 9, 150, 4),
-    HARD("hard", "困难", 8, 10, 12, 120, 6),
-    DOOM("doom", "无人生还", 8, 12, 15, 100, 10),
+    EASY("easy", "简单", 6, 8, 6, 180, 4),
+    NORMAL("normal", "普通", 7, 10, 9, 150, 8),
+    HARD("hard", "困难", 8, 10, 12, 120, 15),
+    DOOM("doom", "无人生还", 8, 12, 15, 100, 25),
 }
 
 internal enum class LinkState { PLAY, WIN, LOSE }
@@ -304,31 +302,30 @@ fun LinkGamePage() {
     var tick by remember { mutableLongStateOf(0L) }
     var buying by remember { mutableStateOf<GameItems.Item?>(null) }
     var settled by remember { mutableStateOf(false) }
+    var rewardText by remember { mutableStateOf("") }
     var newBest by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { GameAudio.init(ctx) }
+    // 结束结算：记最高分，过关给萌点（按难度 4 / 8 / 15 / 25，每天一次）。
+    // 放在每帧的循环里查：以前用 LaunchedEffect(g.state) 等界面重组来触发，但游戏状态不是 Compose 状态，
+    // 这一层不会因为它重组，结果过关了也没结算（2026-10-23 反馈的「连连看没获得萌点」）
+    fun settleIfEnded(g: LinkGame) {
+        if (g.state == LinkState.PLAY || settled) return
+        settled = true
+        newBest = GameScores.submit("link_${g.d.key}", g.score)
+        if (g.state == LinkState.WIN) { rewardText = claimGamePoints("link", g.d.reward, "${g.d.label}过关"); toast(rewardText) }
+    }
     LaunchedEffect(Unit) {
         var last = 0L
         while (true) withFrameNanos { now ->
             val g = game
             if (last != 0L && g != null && !paused && buying == null) g.update(((now - last) / 1e9f).coerceAtMost(0.1f))
+            g?.let { settleIfEnded(it) }
             last = now; tick = now
         }
     }
     val g = game
     val playing = g != null && g.state == LinkState.PLAY && !paused
-    PlayTimeReward(playing)
     GameMusic("link_bgm.mp3", playing)
-    // 结束结算：记最高分，过关给萌点
-    LaunchedEffect(g, g?.state) {
-        if (g != null && g.state != LinkState.PLAY && !settled) {
-            settled = true
-            newBest = GameScores.submit("link_${g.d.key}", g.score)
-            if (g.state == LinkState.WIN) {
-                Store.update { it.copy(economy = it.economy.copy(points = it.economy.points + g.d.reward)) }
-                toast("过关奖励 萌点 +${g.d.reward}")
-            }
-        }
-    }
 
     fun start(d: LinkDiff) {
         val kinds = Catalog.all.map { it.key }.shuffled().take(d.kinds)
@@ -396,7 +393,7 @@ fun LinkGamePage() {
                 ) {
                     Text(if (g.state == LinkState.WIN) "全部消完啦！" else "时间到", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = P.ink)
                     Text("得分 ${g.score}" + if (newBest) "  新纪录！" else "", fontSize = 15.sp, color = P.pink)
-                    if (g.state == LinkState.WIN) Text("过关奖励 萌点 +${g.d.reward}", fontSize = 13.sp, color = P.sub)
+                    if (g.state == LinkState.WIN) Text(rewardText, fontSize = 13.sp, color = P.sub)
                     Gap(10.dp)
                     HRow {
                         PrimaryButton("再来一局") { start(g.d) }

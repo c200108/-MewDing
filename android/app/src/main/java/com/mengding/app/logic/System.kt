@@ -102,6 +102,20 @@ object Perms {
             .firstOrNull { ctx.packageManager.resolveActivity(it, 0) != null }
     }
 
+    /**
+     * 小米 / 红米（MIUI、HyperOS）的「其他权限」页：后台弹出界面、锁屏显示、显示悬浮窗都在这里，
+     * 系统默认是关的，桌面宠物和提醒气泡要靠它们才能出现
+     */
+    fun miuiPermEditor(ctx: Context): Intent? {
+        if (Build.MANUFACTURER.lowercase() !in setOf("xiaomi", "redmi", "poco")) return null
+        val cands = listOf(
+            Intent("miui.intent.action.APP_PERM_EDITOR").setClassName("com.miui.securitycenter", "com.miui.permcenter.permissions.PermissionsEditorActivity"),
+            Intent("miui.intent.action.APP_PERM_EDITOR").setClassName("com.miui.securitycenter", "com.miui.permcenter.permissions.AppPermissionsEditorActivity"),
+            Intent("miui.intent.action.APP_PERM_EDITOR"),
+        ).map { it.putExtra("extra_pkgname", ctx.packageName) }
+        return cands.firstOrNull { ctx.packageManager.resolveActivity(it, 0) != null } ?: appDetails(ctx)
+    }
+
     fun vendorName(): String = when (Build.MANUFACTURER.lowercase()) {
         "xiaomi", "redmi" -> "小米"
         "huawei", "honor" -> "华为/荣耀"

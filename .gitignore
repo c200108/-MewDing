@@ -18,3 +18,38 @@ build/
 __pycache__/
 *.pyc
 .DS_Store
+# Unity 编辑器安装包和缓存
+tools/unity/downloads/
+unity/Library/
+unity/Temp/
+unity/Logs/
+unity/UserSettings/
+UnityEngine/6000.3.9f1/
+unity/.vscode/
+unity/*.csproj
+unity/*.sln
+tools/unity/*.log
+unity/.utmp/
+# Unity 库由 tools/unity/build_unity_library.ps1 生成
+android/app/libs/unityLibrary.aar
+unity/Export/
+unity/Preview/
+# 房间模块由 RoomBaker 从代码烘出来（打包时自动重做），不进版本库
+unity/Assets/Rooms/voxel/
+unity/Assets/Rooms/voxel.meta
+unity/Assets/Rooms/hd2d/
+unity/Assets/Rooms/hd2d.meta
+unity/Assets/Rooms/bake_report.txt*
+unity/Assets/AddressableAssetsData/Android/
+unity/Assets/AddressableAssetsData/Android.meta
+unity/Assets/StreamingAssets/aa*
+# Blender 便携版（tools/blender/Blender4.0，约 1G，本机工具不进版本库）
+tools/blender/Blender4.0/
+tools/blender/downloads/
+tools/blender/export/
+# Aseprite 便携版（本机自编译，约 23M，不进版本库）
+tools/aseprite/
+# HD-2D 验收报告里的日志和截图（每次跑都会重新生成）
+unity/HD2DReport/*.log
+unity/HD2DReport/*.out
+unity/HD2DReport/shots/

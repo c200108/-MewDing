@@ -365,13 +365,3 @@ iosApp/platform/
 
 ## 9. 官方参考
 
-- [Kotlin Multiplatform 兼容性与版本](https://kotlinlang.org/docs/multiplatform/compose-compatibility-and-versioning.html)
-- [Kotlin Multiplatform iOS 集成](https://kotlinlang.org/docs/multiplatform/multiplatform-ios-integration-overview.html)
-- [Compose Multiplatform 与 SwiftUI 集成](https://kotlinlang.org/docs/multiplatform/compose-swiftui-integration.html)
-- [Apple Live Activities](https://developer.apple.com/documentation/activitykit/displaying-live-data-with-live-activities)
-- [Widget 和 Live Activity 交互](https://developer.apple.com/documentation/widgetkit/adding-interactivity-to-widgets-and-live-activities)
-- [Widget 刷新策略](https://developer.apple.com/documentation/widgetkit/keeping-a-widget-up-to-date)
-- [本地通知限制](https://developer.apple.com/documentation/uikit/uilocalnotification)
-- [通知声音格式和时长](https://developer.apple.com/documentation/usernotifications/unnotificationsound)
-- [Core Motion 步数查询](https://developer.apple.com/documentation/coremotion/cmpedometer/querypedometerdata(from:to:withhandler:))
-- [备用 App 图标](https://developer.apple.com/documentation/uikit/uiapplication/setalternateiconname(_:completionhandler:))

@@ -211,8 +211,7 @@ fun FontPage() {
                 if (o.key == "system" || !has) null else runCatching { FontFamily(Font(AppFonts.file(ctx, o.key))) }.getOrNull()
             }
             Column(
-                Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(20.dp)).background(P.card)
-                    .border(if (using) 2.dp else 1.dp, if (using) P.mint else P.line, RoundedCornerShape(20.dp)).padding(14.dp),
+                Modifier.fillMaxWidth().padding(bottom = 10.dp, end = 3.dp).mdTile(using, radius = 20.dp).padding(14.dp),
             ) {
                 HRow {
                     Column(Modifier.weight(1f)) {
@@ -237,9 +236,7 @@ fun FontPage() {
                 }
                 progress[o.key]?.let { v ->
                     Gap(6.dp)
-                    Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(P.line)) {
-                        Box(Modifier.fillMaxWidth(v).height(6.dp).clip(RoundedCornerShape(3.dp)).background(P.mint))
-                    }
+                    MdProgressBar(v)
                 }
                 Gap(8.dp)
                 Text("萌叮 · 今天也要好好喝水呀 123", fontSize = 18.sp, color = if (has) P.ink else P.sub,

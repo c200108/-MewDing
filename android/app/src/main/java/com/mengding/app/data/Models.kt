@@ -51,7 +51,8 @@ data class Settings(
     val quietOn: Boolean = false,
     val quietStart: String = "12:30",
     val quietEnd: String = "13:30",
-    val sound: SoundMode = SoundMode.SOFT,
+    /** 新用户默认萌叮铃铛声；老用户 config.json 里已经写着自己的选择，不受影响 */
+    val sound: SoundMode = SoundMode.DING,
     /** null 表示跟随性别：女性默认打开，其他默认关闭 */
     val periodOn: Boolean? = null,
     val ovulationShown: Boolean = false,
@@ -76,6 +77,8 @@ data class Settings(
     val phrases: List<String> = DEFAULT_PHRASES,
     /** 界面主题，见 ui/Themes.kt */
     val uiTheme: String = "classic",
+    /** 弹窗、提示、按钮、开关等控件的画风：cream 奶油气泡 / comic 漫画贴纸 / line 清新线条 / pixel 像素游戏（ui/Md.kt） */
+    val uiStyle: String = "cream",
     /** 饭点时桌面宠物冒气泡提醒（点气泡就记这一餐） */
     val mealBubble: Boolean = true,
     /** 桌面宠物怎么跑：off 不跑；cross 横穿屏幕；edges 绕屏幕四条边跑 */
@@ -86,14 +89,26 @@ data class Settings(
     val petLapDir: String = "cw",
     /** 小游戏的音效和背景音乐 */
     val gameSound: Boolean = true,
+    /** 首页 HD-2D 小镇的背景音乐（场景右下角小喇叭开关） */
+    val homeMusic: Boolean = true,
     /** 小游戏方向键、操作键按下时震一下 */
     val gameVibrate: Boolean = true,
     /** 显示字体（ui/AppFonts.kt）：system = 系统默认，其他的要先联网下载 */
     val fontKey: String = "system",
     /** 本地天气：用户主动同意获取大致位置后才打开（ui/Weather.kt） */
     val localWeather: Boolean = false,
-    /** 首页动态背景：auto = 按时间 / 天气 / 节日自动换，否则固定某个场景（ui/LiveScene.kt 的 Scenes.ALL） */
+    /** 首页动态背景（2D）：auto = 按时间 / 天气 / 节日自动换，否则固定某个场景（ui/LiveScene.kt 的 Scenes.ALL） */
     val homeScene: String = "auto",
+    /** 首页用 3D 小屋（Unity）；关掉或手机不支持时用上面的 2D 场景。新字段，老用户升级后也默认打开 */
+    val home3d: Boolean = true,
+    /** 3D 小屋的美术风格：voxel 微体素 / hd2d（3D 低模 + 像素贴图）。Unity 一个进程只能起一次，换了要重启 App 才生效 */
+    val sceneStyle: String = "voxel",
+    /** 首页 2D 场景说话气泡的样式：cream 奶油可爱 / comic 卡通漫画 / line 简约线条 / ink 国漫水墨 / pixel 像素复古（ui/SceneBubble.kt） */
+    val bubbleStyle: String = "cream",
+    /** 已经看过的新手轻提示（按页面记：home / notes / shop / games / room / floating） */
+    val tipsSeen: List<String> = emptyList(),
+    /** 自启动、后台锁定没有接口能查，只能用户去系统页设好后自己打勾 */
+    val autostartChecked: Boolean = false,
 )
 
 /** 宠物默认会说的话（用户可以改） */
@@ -143,6 +158,18 @@ data class Daily(
     val recordAwarded: Boolean = false,
     val petExp: Int = 0,
     val waterOff: Boolean = false,
+    /** 今天已经领过萌点的小游戏（adv / pac / link），每种每天一次 */
+    val gamesAwarded: List<String> = emptyList(),
+    /** 今日小任务：0 点后第一次打开时从池里抽 3 条（logic/Tasks.kt），领过的记在 tasksClaimed，全勤奖领过记 tasksBonus */
+    val tasks: List<String> = emptyList(),
+    val tasksClaimed: List<String> = emptyList(),
+    val tasksBonus: Boolean = false,
+    /** 今天的小任务进度：摸摸次数、玩了几局游戏、改了几次便签、喂了几次部屋宠物、完成了几次自定义提醒 */
+    val pets: Int = 0,
+    val games: Int = 0,
+    val notes: Int = 0,
+    val feeds: Int = 0,
+    val customs: Int = 0,
 )
 
 @Serializable
@@ -168,6 +195,14 @@ data class Economy(
     val pantry: Map<String, Int> = emptyMap(),
     /** 小游戏道具：key -> 个数（logic/GameItems.kt） */
     val gameItems: Map<String, Int> = emptyMap(),
+    /** 成就徽章用的累计数：签到天数、摸摸次数、小游戏领到萌点的次数（摸摸和游戏从徽章上线起才开始记） */
+    val checkInDays: Int = 0,
+    val petCount: Int = 0,
+    val gameClaims: Int = 0,
+    /** 每个徽章已经领过奖的等级（0 = 还没解锁） */
+    val badges: Map<String, Int> = emptyMap(),
+    /** 徽章上线时用已有记录补算过了（只补一次累计签到天数） */
+    val badgesSeeded: Boolean = false,
 )
 
 @Serializable
@@ -185,6 +220,10 @@ data class ConfigState(
     val doubleRecoveryUntil: Long = 0,
     val lastAlarmCheck: Long = 0,
     val snoozes: List<Snooze> = emptyList(),
+    /** 最近一次排好的闹钟时间（提醒体检里显示「下一个闹钟」） */
+    val alarmAt: Long = 0,
+    /** 最近一次排闹钟是什么时候（判断「应响未响」时，这之前改过的提醒不算漏） */
+    val scheduledAt: Long = 0,
 )
 
 // ---------------- 个人敏感数据 ----------------
@@ -226,12 +265,40 @@ data class PrivateState(
     val periodDays: List<String> = emptyList(),
     val notes: List<DayNote> = emptyList(),
     val care: List<CarePerson> = emptyList(),
+    /** 自定义提醒（吃药、久坐、护眼、护肤……）和它们的完成 / 跳过记录 */
+    val customs: List<CustomReminder> = emptyList(),
+    val customLog: List<CustomLog> = emptyList(),
 )
+
+/**
+ * 自定义提醒（需求 C）。时间方式二选一：fixed 每天几个固定时刻（times）；interval 在 from–to 时段里每隔 everyMin 分钟。
+ * 重复：daily 每天 / workdays 工作日 / weekdays 自选周几（1 = 周一 … 7 = 周日）。endDate 之后不再提醒。
+ */
+@Serializable
+data class CustomReminder(
+    val id: String,
+    val name: String,
+    /** 小图标：pill 药丸 / stretch 伸展 / eye 眼睛 / skin 护肤 / bell 铃铛（ui/Icons.kt） */
+    val icon: String = "bell",
+    val mode: String = "fixed",
+    val times: List<String> = listOf("09:00"),
+    val everyMin: Int = 60,
+    val from: String = "09:00",
+    val to: String = "18:00",
+    val repeat: String = "daily",
+    val weekdays: List<Int> = emptyList(),
+    val endDate: String? = null,
+    val enabled: Boolean = true,
+)
+
+/** 自定义提醒的一次完成（slot 是到点的时刻 "08:00"，首页提前打勾也记对应时刻）；skipped = 今天跳过 */
+@Serializable
+data class CustomLog(val id: String, val day: String, val t: Long, val slot: String = "", val skipped: Boolean = false)
 
 // ---------------- 便签 ----------------
 
 @Serializable
-enum class BlockType { TEXT, IMAGE, AUDIO, TABLE }
+enum class BlockType { TEXT, IMAGE, AUDIO, TABLE, VIDEO }
 
 /** 段落格式：整段生效 */
 @Serializable

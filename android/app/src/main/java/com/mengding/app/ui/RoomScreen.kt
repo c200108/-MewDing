@@ -19,11 +19,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -56,10 +53,11 @@ import com.mengding.app.pet.Outfits
 @Composable
 fun RoomScreen() {
     val cfg by Store.config.collectAsState()
+    CoachFor("room", listOf(Coach.Tip("room_house", "只有带出门的那只能在首页互动；屋里的宠物点开可以喂、换装、带它出门")))
     PageScaffold("宠物部屋") {
         // 屋子：所有宠物在地板上各自待着
         Box(
-            Modifier.fillMaxWidth().height(170.dp).clip(RoundedCornerShape(26.dp)),
+            Modifier.fillMaxWidth().height(170.dp).coachTarget("room_house").clip(RoundedCornerShape(26.dp)),
         ) {
             Image(painterResource(R.drawable.room_background), null, Modifier.fillMaxWidth().height(170.dp), contentScale = ContentScale.Crop)
             Box(Modifier.fillMaxWidth().height(170.dp).background(Color.White.copy(alpha = .12f)))
@@ -95,8 +93,7 @@ fun RoomScreen() {
 private fun PetCard(p: Pet, outing: Boolean, onClick: () -> Unit) {
     val cfg = Store.cfg
     Column(
-        Modifier.width(164.dp).clip(RoundedCornerShape(20.dp)).background(P.card)
-            .border(if (outing) 2.dp else 1.dp, if (outing) P.mint else P.line, RoundedCornerShape(20.dp))
+        Modifier.width(164.dp).padding(end = 3.dp, bottom = 3.dp).mdTile(outing, radius = 20.dp)
             .clickable(onClick = onClick).padding(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -271,8 +268,7 @@ private fun WardrobeCard(p: Pet) {
                 list.forEach { o ->
                     val on = o.key in p.worn
                     Column(
-                        Modifier.width(72.dp).clip(RoundedCornerShape(14.dp)).background(if (on) P.mintSoft else P.card)
-                            .border(if (on) 2.dp else 1.dp, if (on) P.mint else P.line, RoundedCornerShape(14.dp))
+                        Modifier.width(72.dp).padding(end = 3.dp, bottom = 3.dp).mdTile(on, radius = 14.dp)
                             .clickable { Actions.wear(ctx, p.id, o.key, !on) }.padding(6.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
@@ -351,18 +347,17 @@ fun OutfitShopContent() {
                 val owned = o.key in cfg.economy.ownedOutfits
                 val wearing = pet != null && o.key in pet.worn
                 Column(
-                    Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).background(P.card)
-                        .border(if (wearing) 2.dp else 1.dp, if (wearing) P.mint else P.line, RoundedCornerShape(20.dp)).padding(10.dp),
+                    Modifier.weight(1f).padding(end = 3.dp, bottom = 3.dp).mdTile(wearing, radius = 20.dp).padding(10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Box(Modifier.size(96.dp), contentAlignment = Alignment.Center) {
                         com.mengding.app.pet.Outfits.art[o.key]?.let {
                             androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(it), o.name, Modifier.size(88.dp))
                         }
-                        Box(Modifier.align(Alignment.BottomEnd).clip(RoundedCornerShape(8.dp)).background(P.cream).padding(2.dp)) {
+                        Box(Modifier.align(Alignment.BottomEnd).mdTag(P.line).padding(2.dp)) {
                             PixelIcon(o.key, 34.dp)
                         }
-                        Text(o.category, Modifier.align(Alignment.TopStart).clip(RoundedCornerShape(8.dp)).background(P.mintSoft)
+                        Text(o.category, Modifier.align(Alignment.TopStart).mdTag()
                             .padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 10.sp, color = P.mintDeep)
                     }
                     Gap(6.dp)
@@ -405,7 +400,7 @@ private fun FoodPicker(p: Pet) {
             com.mengding.app.pet.Foods.all(ctx).filter { it.drink == drink }.forEach { f ->
                 val fav = p.species in f.favorite
                 Column(
-                    Modifier.width(96.dp).clip(RoundedCornerShape(16.dp)).background(if (fav) P.pinkSoft else P.cream)
+                    Modifier.width(96.dp).padding(end = 3.dp, bottom = 3.dp).mdTile(fav, P.pink, radius = 16.dp)
                         .clickable { toast(Actions.feedItem(ctx, p.id, f.key)) }.padding(6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {

@@ -16,8 +16,12 @@ class SceneTest {
         assertEquals("river_spring", Scenes.auto(at(10, 9), false))
         assertEquals("village", Scenes.auto(at(10, 14), false))
         assertEquals("autumn", Scenes.auto(at(10, 18, 59), false))
-        assertEquals("night_river", Scenes.auto(at(10, 19), false))
-        assertEquals("bedroom", Scenes.auto(at(10, 23), false))
+        assertEquals("night_bridge", Scenes.auto(at(10, 19), false))
+        assertEquals("night_bridge", Scenes.auto(at(10, 20, 29), false))
+        assertEquals("night_river", Scenes.auto(at(10, 20, 30), false))
+        assertEquals("moon_swing", Scenes.auto(at(10, 22), false))
+        assertEquals("moon_swing", Scenes.auto(at(10, 23, 59), false))
+        assertEquals("bedroom", Scenes.auto(at(10, 0), false))
         assertEquals("bedroom", Scenes.auto(at(10, 3), false))
     }
 

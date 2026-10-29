@@ -31,6 +31,90 @@ object Actions {
         Refresh.all(ctx)
     }
 
+    /** 今天的小任务计数 +1（摸摸、游戏、便签、喂部屋宠物、自定义提醒） */
+    private fun count(st: ConfigState, f: (com.mengding.app.data.Daily) -> com.mengding.app.data.Daily) =
+        Economy.freshDaily(st).let { it.copy(daily = f(it.daily)) }
+
+    /** 打卡、领萌点、完成任务：叮一声，首页宠物项圈的铃铛闪一下 */
+    private fun ding(ctx: Context) = com.mengding.app.pet.Ding.ring(ctx)
+
+    // ---------------- 每日小任务 / 成就徽章 ----------------
+
+    /** 今天还没抽小任务就抽（首页打开时调） */
+    fun ensureTasks() = Store.update { Tasks.ensure(it, Store.priv.customs.isNotEmpty(), Time.dateTimeOf(Time.now()).hour) }
+
+    /** 领一条小任务；3 条都领了顺带发全勤奖（叮叮叮连响一串） */
+    fun claimTask(ctx: Context, key: String): String {
+        var gain = 0; var all = false
+        Store.update { st -> Tasks.claim(st, Store.priv, key).also { gain = it.second; all = it.third }.first }
+        if (gain <= 0) return "这条还没完成哦"
+        if (all) com.mengding.app.pet.Ding.ring(ctx, times = 3) else ding(ctx)
+        Refresh.all(ctx)
+        return if (all) "三条都完成啦！萌点 +${gain - Tasks.BONUS}，全勤奖 +${Tasks.BONUS}" else "领到萌点 +$gain"
+    }
+
+    /** 检查徽章有没有新解锁，有就发萌点；返回这次解锁的（界面拿去放大徽章动画） */
+    fun settleBadges(ctx: Context): List<Badges.Unlock> {
+        var got = emptyList<Badges.Unlock>()
+        Store.update { st -> Badges.settle(st, Store.priv, Store.notesNow.notes.size).also { got = it.second }.first }
+        if (got.isNotEmpty()) Refresh.all(ctx)
+        return got
+    }
+
+    /** 一局小游戏结束（不管领没领到萌点都算玩了一局）；gained > 0 时徽章的「领到萌点次数」+1 */
+    fun gamePlayed(ctx: Context, gained: Int) {
+        Store.update { st ->
+            count(st) { it.copy(games = it.games + 1) }
+                .let { if (gained > 0) it.copy(economy = it.economy.copy(gameClaims = it.economy.gameClaims + 1)) else it }
+        }
+        if (gained > 0) ding(ctx)
+    }
+
+    /** 写或改了一条便签 */
+    fun noteTouched() = Store.update { st -> count(st) { it.copy(notes = it.notes + 1) } }
+
+    // ---------------- 自定义提醒 ----------------
+
+    fun saveCustom(ctx: Context, r: com.mengding.app.data.CustomReminder) {
+        Store.updatePrivate { p -> p.copy(customs = if (p.customs.any { it.id == r.id }) p.customs.map { if (it.id == r.id) r else it } else p.customs + r) }
+        after(ctx)
+    }
+
+    fun deleteCustom(ctx: Context, id: String) {
+        Store.updatePrivate { p -> p.copy(customs = p.customs.filterNot { it.id == id }, customLog = p.customLog.filterNot { it.id == id }) }
+        after(ctx)
+    }
+
+    /**
+     * 完成一次自定义提醒：和喝水吃饭共用「提醒完成 +2、每天上限 30」，宠物冒夸奖气泡，不加宠物体力饱食。
+     * slot = 到点的时刻；首页提前打勾时传 null，固定型销掉最早没完成的那个
+     */
+    fun customDone(ctx: Context, id: String, slot: String? = null, fromReminder: Boolean = false): String {
+        val r = Store.priv.customs.firstOrNull { it.id == id } ?: return ""
+        val day = Time.today()
+        val mark = Customs.slotToMark(r, Store.priv, day, slot)
+        // 固定时刻型：这个时刻已经打过勾（比如通知栏和首页各点了一次）就不重复记
+        if (r.mode != "interval" && (mark.isEmpty() || Customs.logsOn(Store.priv, id, day).any { !it.skipped && it.slot == mark }))
+            return "${r.name} 这次已经打过勾了"
+        Store.updatePrivate { p -> p.copy(customLog = (p.customLog + com.mengding.app.data.CustomLog(id, day.toString(), Time.now(), mark)).takeLast(3000)) }
+        var gained = 0
+        Store.update { st0 -> Economy.reminderDone(count(st0) { it.copy(customs = it.customs + 1) }).also { gained = it.second }.first }
+        ding(ctx)
+        val praise = listOf("真棒！${r.name}完成啦", "做得好，奖励一个摸摸", "好习惯又 +1", "你今天也在好好照顾自己呢").random()
+        PetFx.say(praise)
+        com.mengding.app.pet.PetService.instance?.speak(praise, sound = false)
+        after(ctx)
+        return "${r.name} 完成" + if (gained > 0) "，萌点 +$gained" else ""
+    }
+
+    /** 今天跳过这条自定义提醒：今天剩下的都不响了 */
+    fun customSkip(ctx: Context, id: String): String {
+        val r = Store.priv.customs.firstOrNull { it.id == id } ?: return ""
+        Store.updatePrivate { p -> p.copy(customLog = (p.customLog + com.mengding.app.data.CustomLog(id, Time.todayStr(), Time.now(), skipped = true)).takeLast(3000)) }
+        after(ctx)
+        return "今天不再提醒「${r.name}」"
+    }
+
     fun todayWater(): Int {
         val today = Time.today()
         return Store.priv.water.filter { Time.dateOf(it.t) == today }.sumOf { it.ml }
@@ -38,6 +122,13 @@ object Actions {
 
     /** 每天喝水上限：目标的两倍（超过目标一倍以上不让记，喝太多水对身体不好） */
     fun waterCap(st: ConfigState = Store.cfg): Int = st.settings.waterGoalMl * 2
+
+    /** 这一杯能不能记：已经到上限、或这一杯会超过上限时返回不让记的原因，能记返回 null */
+    fun waterRejection(before: Int, ml: Int, cap: Int): String? = when {
+        before >= cap -> "今天已经喝了 ${before}ml，是目标的两倍了，喝太多水对身体不好，明天再喝吧"
+        before + ml > cap -> "这一杯 ${ml}ml 会超过今天的上限 ${cap}ml（目标的两倍），最多还能记 ${cap - before}ml，选小一点吧"
+        else -> null
+    }
 
     /** 今天还能记多少毫升 */
     fun waterRoomLeft(): Int = (waterCap() - todayWater()).coerceAtLeast(0)
@@ -47,8 +138,7 @@ object Actions {
         val ml = ml0.coerceIn(100, 400)
         val before = todayWater()
         val cap = waterCap()
-        if (before >= cap) return "今天已经喝了 ${before}ml，是目标的两倍了，喝太多水对身体不好，明天再喝吧"
-        if (before + ml > cap) return "这一杯 ${ml}ml 会超过今天的上限 ${cap}ml（目标的两倍），最多还能记 ${cap - before}ml，选小一点吧"
+        waterRejection(before, ml, cap)?.let { return it }
         val now = Time.now()
         Store.updatePrivate { it.copy(water = (it.water + WaterLog(now, ml)).takeLast(5000)) }
         var gained = 0
@@ -59,6 +149,7 @@ object Actions {
             st
         }
         after(ctx)
+        ding(ctx)
         val total = todayWater()
         val goal = Store.cfg.settings.waterGoalMl
         return buildString {
@@ -82,6 +173,7 @@ object Actions {
             st
         }
         after(ctx)
+        ding(ctx)
         return "$label 记下了" + if (gained > 0) "，萌点 +$gained" else ""
     }
 
@@ -126,6 +218,7 @@ object Actions {
             st
         }
         after(ctx)
+        ding(ctx)
         return (if (onTime) "按时睡觉，真棒！宠物今晚体力恢复翻倍" else "晚安，记下了") +
             if (gained > 0) "。萌点 +$gained" else ""
     }
@@ -139,6 +232,7 @@ object Actions {
         }
         Store.update { Economy.reminderDone(it).first }
         after(ctx)
+        ding(ctx)
         return "早上好，记下了"
     }
 
@@ -158,7 +252,13 @@ object Actions {
         var gained = 0
         Store.update { st -> Economy.checkIn(st).also { gained = it.second }.first }
         Refresh.all(ctx)
-        return if (gained > 0) "签到成功，萌点 +$gained（连续 ${Store.cfg.economy.checkInStreak} 天）" else "今天已经签过到了"
+        if (gained <= 0) return "今天已经签过到了"
+        ding(ctx)
+        val streak = Store.cfg.economy.checkInStreak
+        val extra = gained - Economy.CHECK_IN
+        val next = Economy.checkInBonus.keys.firstOrNull { it > streak }
+        return "签到成功，萌点 +$gained" + (if (extra > 0) "（联签 $streak 天奖励 +$extra）" else "（联签 $streak 天）") +
+            (next?.let { "，再签 ${it - streak} 天额外送 ${Economy.checkInBonus[it]}" } ?: "，明天起重新记联签")
     }
 
     /** 摸摸宠物：每天前 10 次加经验 */
@@ -166,10 +266,12 @@ object Actions {
         Store.update { st0 ->
             val st = Economy.freshDaily(st0)
             val id = petId ?: PetSim.outing(st)?.id
-            if (st.daily.petExp >= 20) st
-            else st.copy(
-                pets = st.pets.map { if (it.id == id) it.copy(exp = it.exp + 2) else it },
-                daily = st.daily.copy(petExp = st.daily.petExp + 2),
+            // 小任务的「摸摸 3 次」和爱心徽章的摸摸次数每次都记；经验每天只加前 10 次
+            val counted = st.copy(daily = st.daily.copy(pets = st.daily.pets + 1), economy = st.economy.copy(petCount = st.economy.petCount + 1))
+            if (counted.daily.petExp >= 20) counted
+            else counted.copy(
+                pets = counted.pets.map { if (it.id == id) it.copy(exp = it.exp + 2) else it },
+                daily = counted.daily.copy(petExp = counted.daily.petExp + 2),
             )
         }
         PetFx.play("pet", 2000)
@@ -200,6 +302,14 @@ object Actions {
         Store.update { st -> st.copy(pets = st.pets.map { if (it.id == p.id) it.copy(sleeping = true) else it }) }
         Refresh.all(ctx)
         return "${p.name} 睡着了"
+    }
+
+    /** 3D 小屋里摸它 / 点地面把它叫醒：不管多累都先醒来陪主人 90 秒（和 Unity 那边的「陪玩时间」一样长），之后还累会自己再睡 */
+    fun wakeByTouch(ctx: Context) {
+        val p = PetSim.outing(Store.cfg) ?: return
+        com.mengding.app.pet.PetFx.wokenUntil = Time.now() + 90_000L
+        if (p.sleeping) Store.update { st -> st.copy(pets = st.pets.map { if (it.id == p.id) it.copy(sleeping = false) else it }) }
+        Refresh.all(ctx)
     }
 
     fun wakePet(ctx: Context, petId: String): String {
@@ -256,17 +366,23 @@ object Actions {
     }
 
     /** 喂一样食物或饮料：先用库存，没有库存就当场花萌点买；喂到最爱的额外 +10 并播放开心动画 */
-    fun feedItem(ctx: Context, petId: String, key: String): String {
+    fun feedItem(ctx: Context, petId: String, key: String, inventoryOnly: Boolean = false): String {
         val f = com.mengding.app.pet.Foods.of(ctx, key) ?: return ""
         var msg = ""
         var fav = false
+        var ok = false
         Store.update { st ->
             val pet = st.pets.firstOrNull { it.id == petId } ?: return@update st
             val stock = st.economy.pantry[key] ?: 0
+            if (inventoryOnly && stock <= 0) {
+                msg = "库存不足，请先到商店补充"
+                return@update st
+            }
             val paid = if (stock > 0) st.copy(economy = st.economy.copy(pantry = st.economy.pantry + (key to stock - 1)))
                 else Economy.spend(st, f.price) ?: run { msg = "萌点不够了"; return@update st }
             fav = pet.species in f.favorite
             val bonus = if (fav) 10f else 0f
+            ok = true
             msg = "${pet.name} 吃了${f.name}" + (if (stock > 0) "（库存还剩 ${stock - 1}）" else "（-${f.price} 萌点）") +
                 if (fav) "，是它最爱的！" else ""
             paid.copy(pets = paid.pets.map {
@@ -275,7 +391,8 @@ object Actions {
                     .let { p -> p.copy(stamina = (p.stamina + f.stamina + if (fav) 2f else 0f).coerceIn(0f, 100f)) }
             })
         }
-        if (msg.isNotEmpty() && !msg.startsWith("萌点")) {
+        if (ok) Store.update { st -> count(st) { it.copy(feeds = it.feeds + 1) } }
+        if (msg.isNotEmpty() && !msg.startsWith("萌点") && !msg.startsWith("库存不足")) {
             val pet = Store.cfg.pets.firstOrNull { it.id == petId }
             if (pet != null && pet.id == PetSim.outing(Store.cfg)?.id) {
                 PetFx.play(if (f.drink) "drink" else "eat", FEED_ANIM_MS, foodKey = key)
@@ -300,6 +417,7 @@ object Actions {
     /** on = true 穿上（同分类的旧服装自动换下），false 脱下 */
     fun wear(ctx: Context, petId: String, key: String, on: Boolean) {
         Store.update { st ->
+            if (on && (key !in st.economy.ownedOutfits || com.mengding.app.pet.Outfits.of(ctx, key) == null)) return@update st
             st.copy(pets = st.pets.map {
                 if (it.id != petId) it
                 else it.copy(outfit = null, wearing = if (on) com.mengding.app.pet.Outfits.put(ctx, it.worn, key) else it.worn - key)
